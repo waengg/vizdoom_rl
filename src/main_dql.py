@@ -17,12 +17,22 @@ from random import choice
 from time import sleep
 from collections import deque
 import argparse
+import tensorflow as tf
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+limit_gpu_usage()
+# tf.config.set_logical_device_configuration(gpus[0], [tf.config.LogicalDeviceConfiguration(memory_limit=2048)])
+# tf.config.experimental.set_virtual_device_configuration(gpus[0], [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=2048)])
+# gpus = tf.config.experimental.list_physical_devices('GPU')
+# # gpu = list(filter(lambda g: g.name.split(':')[-1] == '0', gpus))[0]
+# for gpu in gpus:    
+#     tf.config.experimental.set_memory_growth(gpu, True)
 from algorithms.DeepQNetwork import DeepQNetwork
 import numpy as np
 from vizdoom import vizdoom as vzd
-import tensorflow as tf
+
+# print(gpus)
 import numpy as np
-import os
 
 def build_action(n_actions, index):
     return [True if i == index else False for i in range(0, n_actions)]
@@ -45,20 +55,20 @@ def build_memory_state(state, action, reward, new_state, is_terminal):
         'terminal': is_terminal
     }
 
-def limit_gpu_usage(device_id):
-    os.environ['CUDA_VISIBLE_DEVICES'] = device_id
+def limit_gpu_usage():
     gpus = tf.config.experimental.list_physical_devices('GPU')
-    gpu = list(filter(lambda g: g.name.split(':')[-1] == device_id, gpus))[0]
-    tf.config.experimental.set_memory_growth(gpu, True)
+    for gpu in gpus:
+        tf.config.experimental.set_memory_growth(gpu, True)
 
 def create_game():
     pass
 
 if __name__ == "__main__":
-    gpus = tf.config.experimental.list_physical_devices('GPU')
-    # Create DoomGame instance. It will run the game and communicate with you.
+#    gpus = tf.config.experimental.list_physical_devices('GPU')
+#    limit_gpu_usage('0')
+# Create DoomGame instance. It will run the game and communicate with you.
     game = vzd.DoomGame()
-
+    game.set_window_visible(False)
     # Now it's time for configuration!
     # load_config could be used to load configuration instead of doing it here with code.
     # If load_config is used in-code configuration will also work - most recent changes will add to previous ones.
@@ -119,7 +129,7 @@ if __name__ == "__main__":
     game.set_episode_start_time(10)
 
     # Makes the window appear (turned on by default)
-    game.set_window_visible(True)
+    #game.set_window_visible(True)
 
     # Turns on the sound. (turned off by default)
     game.set_sound_enabled(False)
@@ -152,88 +162,91 @@ if __name__ == "__main__":
     dql = DeepQNetwork(dims, actions, training=True)
     state_buffer = deque(maxlen=4)
 
-    for i in range(episodes):
-        game.new_episode()
-        while not game.is_episode_finished():
-            state = game.get_state()
-            frame = state.screen_buffer
-            processed_frame = dql.preprocess(frame)
-            if len(state_buffer) == 0:
-                state_buffer.extend([processed_frame for _ in range(0, frames_per_state)])
-            else:
-                state_buffer.append(processed_frame)
-            # processed_state = dql.preprocess(state_buffer)
-            actions = dql.get_actions(np.array(state_buffer))
-            best_action = np.argmax(actions)
-            #TODO: add action to make_action: requires building the action
-            r = game.make_action()
-            new_state = game.get_state()
-            new_frame = new_state.screen_buffer
-            processed_new_frame = dql.preprocess(new_frame)
-            new_state_buffer = state_buffer.copy()
-            new_state_buffer.append(processed_new_frame)
-            isterminal = game.is_episode_finished()
-            memory_state = build_memory_state(state_buffer, best_action, r, new_state_buffer, isterminal)
-            dql.add_transition(memory_state)
-            dql.train()
+    try:
+        for i in range(episodes):
+            game.new_episode()
+            while not game.is_episode_finished():
+                state = game.get_state()
+                frame = state.screen_buffer
+                processed_frame = dql.preprocess(frame)
+                if len(state_buffer) == 0:
+                    state_buffer.extend([processed_frame for _ in range(0, frames_per_state)])
+                else:
+                    state_buffer.append(processed_frame)
+                # processed_state = dql.preprocess(state_buffer)
+                actions = dql.get_actions(np.array(state_buffer))
+                best_action = np.argmax(actions)
+                #TODO: add action to make_action: requires building the action
+                r = game.make_action()
+                new_state = game.get_state()
+                new_frame = new_state.screen_buffer
+                processed_new_frame = dql.preprocess(new_frame)
+                new_state_buffer = state_buffer.copy()
+                new_state_buffer.append(processed_new_frame)
+                isterminal = game.is_episode_finished()
+                memory_state = build_memory_state(state_buffer, best_action, r, new_state_buffer, isterminal)
+                dql.add_transition(memory_state)
+                dql.train()
 
 
-            
-    
-    # Sets time that will pause the engine after each action (in seconds)
-    # Without this everything would go too fast for you to keep track of what's happening.
-    sleep_time = 1.0 / vzd.DEFAULT_TICRATE  # = 0.028
+                
+        
+        # Sets time that will pause the engine after each action (in seconds)
+        # Without this everything would go too fast for you to keep track of what's happening.
+        sleep_time = 1.0 / vzd.DEFAULT_TICRATE  # = 0.028
 
-    for i in range(episodes):
-        print("Episode #" + str(i + 1))
+        for i in range(episodes):
+            print("Episode #" + str(i + 1))
 
-        # Starts a new episode. It is not needed right after init() but it doesn't cost much. At least the loop is nicer.
-        game.new_episode()
+            # Starts a new episode. It is not needed right after init() but it doesn't cost much. At least the loop is nicer.
+            game.new_episode()
 
-        while not game.is_episode_finished():
+            while not game.is_episode_finished():
 
-            # Gets the state
-            state = game.get_state()
+                # Gets the state
+                state = game.get_state()
 
-            # Which consists of:
-            n = state.number
-            variables = state.game_variables
-            screen_buf = state.screen_buffer
-            depth_buf = state.depth_buffer
-            labels_buf = state.labels_buffer
-            automap_buf = state.automap_buffer
-            labels = state.labels
-            objects = state.objects
-            sectors = state.sectors
+                # Which consists of:
+                n = state.number
+                variables = state.game_variables
+                screen_buf = state.screen_buffer
+                depth_buf = state.depth_buffer
+                labels_buf = state.labels_buffer
+                automap_buf = state.automap_buffer
+                labels = state.labels
+                objects = state.objects
+                sectors = state.sectors
 
-            # Games variables can be also accessed via:
-            #game.get_game_variable(GameVariable.AMMO2)
+                # Games variables can be also accessed via:
+                #game.get_game_variable(GameVariable.AMMO2)
 
-            # Makes a random action and get remember reward.
-            r = game.make_action(choice(actions))
+                # Makes a random action and get remember reward.
+                r = game.make_action(choice(actions))
 
-            # Makes a "prolonged" action and skip frames:
-            # skiprate = 4
-            # r = game.make_action(choice(actions), skiprate)
+                # Makes a "prolonged" action and skip frames:
+                # skiprate = 4
+                # r = game.make_action(choice(actions), skiprate)
 
-            # The same could be achieved with:
-            # game.set_action(choice(actions))
-            # game.advance_action(skiprate)
-            # r = game.get_last_reward()
+                # The same could be achieved with:
+                # game.set_action(choice(actions))
+                # game.advance_action(skiprate)
+                # r = game.get_last_reward()
 
-            # Prints state's game variables and reward.
-            print("State #" + str(n))
-            print("Game variables:", vars)
-            print("Reward:", r)
-            print("=====================")
+                # Prints state's game variables and reward.
+                print("State #" + str(n))
+                print("Game variables:", vars)
+                print("Reward:", r)
+                print("=====================")
 
-            if sleep_time > 0:
-                sleep(sleep_time)
+                if sleep_time > 0:
+                    sleep(sleep_time)
 
-        # Check how the episode went.
-        print("Episode finished.")
-        print("Total reward:", game.get_total_reward())
-        print("************************")
-
+            # Check how the episode went.
+            print("Episode finished.")
+            print("Total reward:", game.get_total_reward())
+            print("************************")
+    except Exception as e:
+        print(e)
+        game.close()
     # It will be done automatically anyway but sometimes you need to do it in the middle of the program...
     game.close()
