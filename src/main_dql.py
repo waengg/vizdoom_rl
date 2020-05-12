@@ -18,9 +18,24 @@ from time import sleep
 from collections import deque
 import argparse
 import tensorflow as tf
+print(f'Running TensorFlow v{tf.__version__}')
 import os
+
+USE_GPU = False
+DEVICES = None
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-limit_gpu_usage()
+
+if USE_GPU:
+    DEVICES = tf.config.experimental.list_physical_devices('GPU')
+    for gpu in DEVICES:
+        tf.config.experimental.set_memory_growth(gpu, True)
+else:
+    DEVICES = tf.config.list_physical_devices('CPU')
+    tf.config.experimental.set_visible_devices(devices=DEVICES, device_type='CPU')
+    tf.config.experimental.set_visible_devices(devices=[], device_type='GPU')
+    
+
+
 # tf.config.set_logical_device_configuration(gpus[0], [tf.config.LogicalDeviceConfiguration(memory_limit=2048)])
 # tf.config.experimental.set_virtual_device_configuration(gpus[0], [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=2048)])
 # gpus = tf.config.experimental.list_physical_devices('GPU')
