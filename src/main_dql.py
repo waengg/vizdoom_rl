@@ -14,6 +14,7 @@
 from __future__ import print_function
 
 from random import choice
+import traceback
 from time import sleep
 from collections import deque
 import argparse
@@ -59,9 +60,12 @@ def build_memory_state(state, action, reward, new_state, is_terminal):
     state_array = np.array(state)
     sa_shape = state_array.shape
     state_array = state_array.reshape(sa_shape[1:3] + (4,))
-    new_state_array = np.array(new_state)
-    nsa_shape = state_array.shape
-    new_state_array = new_state_array.reshape(nsa_shape[1:3] + (4,))
+    if not is_terminal:
+        new_state_array = np.array(new_state)
+        nsa_shape = new_state_array.shape
+        new_state_array = new_state_array.reshape(nsa_shape[1:3] + (4,))
+    else:
+        new_state_array = None
     return {
         'state': state_array,
         'action': action,
@@ -138,7 +142,7 @@ if __name__ == "__main__":
     game.add_available_game_variable(vzd.GameVariable.AMMO2)
 
     # Causes episodes to finish after 200 tics (actions)
-    game.set_episode_timeout(200)
+    game.set_episode_timeout(120)
 
     # Makes episodes start after 10 tics (~after raising the weapon)
     game.set_episode_start_time(10)
@@ -192,13 +196,16 @@ if __name__ == "__main__":
                 actions = dql.get_actions(np.array(state_buffer))
                 best_action = np.argmax(actions)
                 #TODO: add action to make_action: requires building the action
-                r = game.make_action()
-                new_state = game.get_state()
-                new_frame = new_state.screen_buffer
-                processed_new_frame = dql.preprocess(new_frame)
-                new_state_buffer = state_buffer.copy()
-                new_state_buffer.append(processed_new_frame)
+                r = game.make_action(build_action(len(actions), best_action))
                 isterminal = game.is_episode_finished()
+                if isterminal:
+                    new_state_buffer = None
+                else:
+                    new_state = game.get_state()
+                    new_frame = new_state.screen_buffer
+                    processed_new_frame = dql.preprocess(new_frame)
+                    new_state_buffer = state_buffer.copy()
+                    new_state_buffer.append(processed_new_frame)
                 memory_state = build_memory_state(state_buffer, best_action, r, new_state_buffer, isterminal)
                 dql.add_transition(memory_state)
                 dql.train()
@@ -261,7 +268,9 @@ if __name__ == "__main__":
             print("Total reward:", game.get_total_reward())
             print("************************")
     except Exception as e:
+        traceback.print_exc()
         print(e)
         game.close()
+        exit(1)
     # It will be done automatically anyway but sometimes you need to do it in the middle of the program...
     game.close()
