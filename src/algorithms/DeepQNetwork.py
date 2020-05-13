@@ -1,15 +1,16 @@
 import tensorflow as tf
 from collections import deque
 from tensorflow import keras as K
+import datetime
 
 # from layers import Layers 
 import cv2
-from random import sample
+from random import sample, uniform, randint
 import numpy as np
 
 class DeepQNetwork:
 
-    def __init__(self, dims, actions, frames_per_state=4, e_prob=0.2, memsize=2000, gamma=0.95, training=False, batch_size=32):
+    def __init__(self, dims, actions, frames_per_state=4, e_prob=0.2, memsize=200000, gamma=0.95, training=False, batch_size=32):
         self.TAG = DeepQNetwork.__name__
         self.input_dims     = dims
         self.actions        = actions
@@ -27,6 +28,13 @@ class DeepQNetwork:
 
     def add_transition(self, state):
         self.mem.append(state)
+
+    def perform_random_action(self):
+        rand = uniform(0, 1)
+        if rand < self.e_prob:
+            return randint(0, len(self.actions)-1)
+        else:
+            return -1
 
     def load_weights(self, path):
         self.model.load_weights(path)
@@ -50,19 +58,30 @@ class DeepQNetwork:
             If state is terminal: y_j = reward
                             else: y_j = reward + \gamma * q(s, a, w)
         """
-        y_j = np.array([x['reward'] if x['terminal'] is True else self.future_q(x) for x in batch])
-        # y_j = np.array([])
+        # y_j_terminal = np.array([x['state'] for x in batch if x['terminal'] is True])
+        # y_j_non_terminal = np.array([x for x in batch if x['terminal'] is False])
 
+        #TODO: keep a reference of transition index
+        #TODO: then, join predicted q vals with states
+
+
+
+
+        t = datetime.datetime.now()
+        y_j = np.array([x['reward'] if x['terminal'] else self.future_q(x) for x in batch])
+        print(f'Time to predict q values: {datetime.datetime.now() - t}')
+        # y_j = np.array([])
 
         self.model.fit(states, y_j, epochs=1, steps_per_epoch=1, batch_size=self.batch_size)
         # with tf.GradientTape() as tape:
-        #     samples = self.get_samples()
+        #     samples = self.get_samples()     
 
-            
-    def future_q(self, mem_entry):
-        state = mem_entry['state']
-        q = self.model.predict(np.expand_dims(state, axis=0))
-        return mem_entry['reward'] + self.gamma * q[0][mem_entry['action']]
+    def future_q(self, batch):
+        states = np.array([x['next_state'] for x in batch])
+        q = self.model.predict(states)
+        argmax = np.argmax(q, axis=1)
+        bellman = [self.gamma * q[i][argmax[i]] if batch[i]['terminal'] else 0 for i in range(0, len(q))]
+        return [mem_entry['reward'] + bellman[i] for i, mem_entry in enumerate(batch)]
 
     def build_model(self):
         in_layer = K.layers.Input(self.input_dims + (self.frames_per_state,), name='state')

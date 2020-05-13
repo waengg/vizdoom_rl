@@ -4,7 +4,7 @@
 # This script presents how to use the most basic features of the environment.
 # It configures the engine, and makes the agent perform random actions.
 # It also gets current state and reward earned with the action.
-# <episodes> number of episodes are played. 
+# <episodes> number of episodes are played.
 # Random combination of buttons is chosen for every action.
 # Game variables from state and last reward are printed.
 #
@@ -15,14 +15,15 @@ from __future__ import print_function
 
 from random import choice
 import traceback
-from time import sleep
+import datetime
 from collections import deque
 import argparse
 import tensorflow as tf
 print(f'Running TensorFlow v{tf.__version__}')
 import os
+from random import random, randint
 
-USE_GPU = False
+USE_GPU = True
 DEVICES = None
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
@@ -70,7 +71,7 @@ def build_memory_state(state, action, reward, new_state, is_terminal):
         'state': state_array,
         'action': action,
         'reward': reward,
-        'new_state': new_state_array,
+        'next_state': new_state_array,
         'terminal': is_terminal
     }
 
@@ -181,10 +182,13 @@ if __name__ == "__main__":
     dql = DeepQNetwork(dims, actions, training=True)
     state_buffer = deque(maxlen=4)
 
+    #TODO: simplify game loop: collect state -> perform action -> collect next state -> train
+
     try:
         for i in range(episodes):
             game.new_episode()
             while not game.is_episode_finished():
+                t = datetime.datetime.now()
                 state = game.get_state()
                 frame = state.screen_buffer
                 processed_frame = dql.preprocess(frame)
@@ -193,10 +197,19 @@ if __name__ == "__main__":
                 else:
                     state_buffer.append(processed_frame)
                 # processed_state = dql.preprocess(state_buffer)
-                actions = dql.get_actions(np.array(state_buffer))
-                best_action = np.argmax(actions)
+                rand = random()
+                if rand <= dql.e_prob:
+                    best_action = randint(0, len(actions)-1)
+                else:
+                    actions = dql.get_actions(np.array(state_buffer))
+                    best_action = np.argmax(actions)
+                    diff = datetime.datetime.now() - t
+                    print(f'Time passed to compute best action: {str(diff)}')
                 #TODO: add action to make_action: requires building the action
+                before_action = datetime.datetime.now()
                 r = game.make_action(build_action(len(actions), best_action))
+                diff = datetime.datetime.now() - before_action
+                print(f'Time passed to perform one action on vizdoom: {str(diff)}')
                 isterminal = game.is_episode_finished()
                 if isterminal:
                     new_state_buffer = None
@@ -209,6 +222,8 @@ if __name__ == "__main__":
                 memory_state = build_memory_state(state_buffer, best_action, r, new_state_buffer, isterminal)
                 dql.add_transition(memory_state)
                 dql.train()
+                diff = datetime.datetime.now() - t
+                print(f'Time passed to conclude a training cycle: {str(diff)}')
 
 
                 
