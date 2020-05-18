@@ -10,10 +10,14 @@ import numpy as np
 
 class DeepQNetwork:
 
-    def __init__(self, dims, actions, frames_per_state=4, e_prob=0.2, memsize=200000, gamma=0.95, training=False, batch_size=32):
+    def __init__(self, dims, actions, frames_per_state=4, e_prob=0.1, memsize=200000, gamma=0.80, training=False, batch_size=32):
         self.TAG = DeepQNetwork.__name__
         self.input_dims     = dims
         self.actions        = actions
+        self.start_eps      = start_eps
+        self.end_eps        = end_eps
+        self.anneal_eps     = anneal_eps
+        self.anneal_until   = anneal_until
         self.e_prob         = e_prob
         self.frames_per_state = frames_per_state
         # each sample is described as a 5-tuple (s_t (4 sequential states), a_t, r_t+1, s_t+1 (last 3 from s_t + 1 new), isterminal)
@@ -22,7 +26,7 @@ class DeepQNetwork:
         self.batch_size     = batch_size
         self.gamma          = gamma
 
-        self.model          = self.build_model()
+        self.model          = self.build_model(training=training)
         if self.training:
             self.compile_model()
 
@@ -40,11 +44,23 @@ class DeepQNetwork:
         self.model.load_weights(path)
 
     def preprocess(self, frame):
+        """
+            frame: a grayscale frame from ViZDoom
+            out: frame resized to self.input_dims
+        """
         array = np.array(frame)
         # assumes that the current config uses screen format GRAY8
         resized = cv2.resize(frame.copy(), self.input_dims[::-1])
         out = resized.astype('float32')
         return np.reshape(out, out.shape + (1,))
+
+    def next_eps(self, frame_num):
+        if frame_num > self.anneal_until:
+            return self.end_eps
+        else:
+            return self.start_eps - ((self.start_eps - self.end_eps) / \
+                self.anneal_until * frame_num)
+
 
     def train(self):
         #From a batch sampled from transition memory, train the model
@@ -53,6 +69,7 @@ class DeepQNetwork:
             return
         batch = sample(self.mem, self.batch_size)
         states = np.array([x['state'] for x in batch])
+        actions = np.array([(i, x['action']) for i, x in enumerate(batch)])
         """
             as described in Mnih et al. 2015:
             If state is terminal: y_j = reward
@@ -61,55 +78,84 @@ class DeepQNetwork:
         # y_j_terminal = np.array([x['state'] for x in batch if x['terminal'] is True])
         # y_j_non_terminal = np.array([x for x in batch if x['terminal'] is False])
 
-        #TODO: keep a reference of transition index
-        #TODO: then, join predicted q vals with states
-
-
-
-
         t = datetime.datetime.now()
-        y_j = np.array([x['reward'] if x['terminal'] else self.future_q(x) for x in batch])
-        print(f'Time to predict q values: {datetime.datetime.now() - t}')
-        # y_j = np.array([])
+        y_true = np.array(self._future_q(batch))
+        # print(y_true)
 
-        self.model.fit(states, y_j, epochs=1, steps_per_epoch=1, batch_size=self.batch_size)
+        # y_j = np.array([x['reward'] if x['terminal'] else self.future_q(x) for x in batch])
+        dummy_y_true = [y_true, np.ones((len(batch),))]
+
+        self.model.fit([states, actions, y_true], dummy_y_true, epochs=1, batch_size=self.batch_size, verbose=0)
         # with tf.GradientTape() as tape:
         #     samples = self.get_samples()     
 
-    def future_q(self, batch):
+    def _future_q(self, batch):
+        batch_size = len(batch)
         states = np.array([x['next_state'] for x in batch])
-        q = self.model.predict(states)
+        q = self.model.predict([
+            states,
+            np.ones((batch_size, 2)),
+            np.ones((batch_size, 1))
+        ])[0]
+        # print(q)
+
         argmax = np.argmax(q, axis=1)
-        bellman = [self.gamma * q[i][argmax[i]] if batch[i]['terminal'] else 0 for i in range(0, len(q))]
+        bellman = [self.gamma * q[i][argmax[i]] if not batch[i]['terminal'] else 0 for i in range(0, len(q))]
         return [mem_entry['reward'] + bellman[i] for i, mem_entry in enumerate(batch)]
 
-    def build_model(self):
+    def build_model(self, training=True):
         in_layer = K.layers.Input(self.input_dims + (self.frames_per_state,), name='state')
+        transition_action = None
         x = K.layers.Conv2D(16, [8, 8], strides=(4, 4), activation='relu')(in_layer)
         x = K.layers.Conv2D(32, [4, 4], strides=(2, 2), activation='relu')(x)
         x = K.layers.Flatten()(x)
         x = K.layers.Dense(256, activation='relu')(x)
         q = K.layers.Dense(len(self.actions), name='q_values')(x)
-        return K.Model(in_layer, q)
+        if training:
+            transition_action = K.layers.Input((2,), name='transition_action', dtype='int32')
+            y_true = K.layers.Input((1,), name="y_true", dtype='float32')
+            actions = K.layers.Lambda(lambda t: tf.gather_nd(t, transition_action))(q)
+            loss = K.layers.Subtract()([y_true, actions])
+            loss = K.layers.Lambda(lambda t: K.backend.square(t))(loss)
+            return K.Model([in_layer, transition_action, y_true], [q, loss])
+        else:
+            return K.Model(in_layer, q)
 
     @staticmethod
     def _mse_max_output(q_actual, q_pred):
-        argmax = tf.cast(K.backend.argmax(q_pred), tf.int32)
-        indices = tf.range(0, tf.shape(argmax)[0], dtype=tf.int32)
-        i = K.backend.stack([indices, argmax], axis=1)
-        max_q = tf.gather_nd(q_pred, i)
-        return K.backend.square(q_actual - max_q)
+        qs = q_pred[0]
+        actions = q_pred[1]
+        y_j = q_actual[0]
+        # argmax = tf.cast(K.backend.argmax(q_pred), tf.int32)
+        # indices = tf.range(0, tf.shape(argmax)[0], dtype=tf.int32)
+        # i = K.backend.stack([indices, argmax], axis=1)
+        # max_q = tf.gather_nd(q_pred, i)
+        # return K.backend.square(q_actual - max_q)
+        return K.backend.square(y_j - actions)
 
     def compile_model(self):
         optimizer = K.optimizers.Adam()
-        self.model.compile(optimizer=optimizer, loss=DeepQNetwork._mse_max_output)
+        losses = [
+            lambda y_true, y_pred: K.backend.zeros_like(y_pred),
+            lambda y_true, y_pred: y_pred,
+        ]
+        self.model.compile(optimizer=optimizer, loss=losses)
 
-    def save_weights(self):
-        self
+    def save_weights(self, path):
+        self.model.save_weights(f'{path}.h5')
+
+    def load_weights(self, path):
+        self.model.load_weights(f'{path}.h5')
 
     def get_actions(self, state):
         state = state.reshape((1,) + self.input_dims + (self.frames_per_state,))
-        return self.model.predict(state)[0]
-
+        if self.training:
+            return self.model.predict([
+                state,
+                np.ones((1,2)),
+                np.ones((1,1)),
+            ])[0]
+        else:
+            return self.model.predict([state])[0]
 
 # q = DeepQNetwork((112, 112), [1,2,3], training=True)
