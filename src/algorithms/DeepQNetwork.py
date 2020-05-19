@@ -10,7 +10,10 @@ import numpy as np
 
 class DeepQNetwork:
 
-    def __init__(self, dims, actions, frames_per_state=4, e_prob=0.1, memsize=200000, gamma=0.80, training=False, batch_size=32):
+    def __init__(self, dims, actions, frames_per_state=4, e_prob=0.1, start_eps=1.0, end_eps=0.1,
+                anneal_eps=True, anneal_until=20000, memsize=200000, gamma=0.80, training=False, batch_size=32):
+        
+        
         self.TAG = DeepQNetwork.__name__
         self.input_dims     = dims
         self.actions        = actions
@@ -32,13 +35,6 @@ class DeepQNetwork:
 
     def add_transition(self, state):
         self.mem.append(state)
-
-    def perform_random_action(self):
-        rand = uniform(0, 1)
-        if rand < self.e_prob:
-            return randint(0, len(self.actions)-1)
-        else:
-            return -1
 
     def load_weights(self, path):
         self.model.load_weights(path)
@@ -81,6 +77,7 @@ class DeepQNetwork:
         t = datetime.datetime.now()
         y_true = np.array(self._future_q(batch))
         # print(y_true)
+        # print(y_true)
 
         # y_j = np.array([x['reward'] if x['terminal'] else self.future_q(x) for x in batch])
         dummy_y_true = [y_true, np.ones((len(batch),))]
@@ -105,33 +102,21 @@ class DeepQNetwork:
 
     def build_model(self, training=True):
         in_layer = K.layers.Input(self.input_dims + (self.frames_per_state,), name='state')
-        transition_action = None
         x = K.layers.Conv2D(16, [8, 8], strides=(4, 4), activation='relu')(in_layer)
         x = K.layers.Conv2D(32, [4, 4], strides=(2, 2), activation='relu')(x)
+        x = K.layers.Conv2D(64, [3, 3], strides=(1, 1), activation='relu')(x)
         x = K.layers.Flatten()(x)
         x = K.layers.Dense(256, activation='relu')(x)
         q = K.layers.Dense(len(self.actions), name='q_values')(x)
         if training:
             transition_action = K.layers.Input((2,), name='transition_action', dtype='int32')
             y_true = K.layers.Input((1,), name="y_true", dtype='float32')
-            actions = K.layers.Lambda(lambda t: tf.gather_nd(t, transition_action))(q)
-            loss = K.layers.Subtract()([y_true, actions])
-            loss = K.layers.Lambda(lambda t: K.backend.square(t))(loss)
+            masked_actions = K.layers.Lambda(lambda t: tf.gather_nd(t, transition_action))(q)
+            loss = K.layers.Subtract()([y_true, masked_actions])
+            loss = K.layers.Lambda(lambda t: K.backend.square(t), name='loss')(loss)
             return K.Model([in_layer, transition_action, y_true], [q, loss])
         else:
             return K.Model(in_layer, q)
-
-    @staticmethod
-    def _mse_max_output(q_actual, q_pred):
-        qs = q_pred[0]
-        actions = q_pred[1]
-        y_j = q_actual[0]
-        # argmax = tf.cast(K.backend.argmax(q_pred), tf.int32)
-        # indices = tf.range(0, tf.shape(argmax)[0], dtype=tf.int32)
-        # i = K.backend.stack([indices, argmax], axis=1)
-        # max_q = tf.gather_nd(q_pred, i)
-        # return K.backend.square(q_actual - max_q)
-        return K.backend.square(y_j - actions)
 
     def compile_model(self):
         optimizer = K.optimizers.Adam()
@@ -148,12 +133,14 @@ class DeepQNetwork:
         self.model.load_weights(f'{path}.h5')
 
     def get_actions(self, state):
-        state = state.reshape((1,) + self.input_dims + (self.frames_per_state,))
+        if state.ndim != 4:
+            state = state.reshape((1,) + self.input_dims + (self.frames_per_state,))
         if self.training:
+            batch_size = len(state)
             return self.model.predict([
                 state,
-                np.ones((1,2)),
-                np.ones((1,1)),
+                np.ones((batch_size, 2)),
+                np.ones((batch_size, 1)),
             ])[0]
         else:
             return self.model.predict([state])[0]

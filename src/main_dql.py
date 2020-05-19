@@ -77,7 +77,7 @@ def build_memory_state(state, action, reward, new_state, is_terminal):
 
 def dry_run(game, n_states, actions):
     visited_states = []
-    state_buffer = deque(4)
+    state_buffer = deque(maxlen=4)
     game.new_episode()
     for _ in range(n_states):
         #TODO: refactor state collection and preprocessing into a single function
@@ -95,9 +95,15 @@ def dry_run(game, n_states, actions):
         if game.is_episode_finished():
             game.new_episode()
             state_buffer.clear()
+    return np.array(visited_states)
 
 def eval_average_q(states, network):
-    pass
+    q_vals = network.get_actions(states)
+    print(q_vals)
+    argmax = np.argmax(q_vals, axis=1)
+    print(len(argmax), argmax.shape)
+    max_values = np.array([q_vals[i][argmax[i]] for i in range(len(argmax))])
+    return np.mean(max_values)
 
 def limit_gpu_usage():
     gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -203,7 +209,7 @@ if __name__ == "__main__":
     # Run this many episodes
     episodes = 1000
     resolution = (640, 480)
-    dims = (resolution[1]//4, resolution[0]//4)
+    dims = (resolution[0]//4, resolution[1]//4)
     frames_per_state = 4
 
     dql = DeepQNetwork(dims, actions, training=True)
@@ -212,9 +218,10 @@ if __name__ == "__main__":
     #TODO: simplify game loop: collect state -> perform action -> collect next state -> train
 
     try:
-        eval_states = dry_run(game, 400, actions)
-        eval_average_q()
+        eval_states = dry_run(game, 2000, actions)
+        frame_number = 0
         for i in range(episodes):
+            print(f'Episode {i}: Average Q: {eval_average_q(eval_states, dql)}')
             game.new_episode()
             cumulative_reward = 0.
             while not game.is_episode_finished():
@@ -224,30 +231,27 @@ if __name__ == "__main__":
                 processed_frame = dql.preprocess(frame)
                 if len(state_buffer) == 0:
                     [state_buffer.append(processed_frame) for _ in range(frames_per_state)]
-                    #state_buffer.extend([processed_frame for _ in range(0, frames_per_state)])
                 else:
                     state_buffer.append(processed_frame)
-                # processed_state = dql.preprocess(state_buffer)
                 rand = random()
-                if rand <= dql.e_prob:
-                    best_action = randint(0, len(actions[0])-1)
-                    # print(f'Performing random action {best_action}')
+                epsilon = dql.next_eps(frame_number)
+                if rand <= epsilon:
+                    best_action = randint(0, len(actions[0]) - 1)
                 else:
-                    q_vals = dql.get_actions(np.array(state_buffer))
+                    q_vals = dql.get_actions(np.array(state_buffer).reshape(1,160,120,4))
                     best_action = np.argmax(q_vals)
-                    # print(f'Performing best action {best_action} predicted by the model')
-                    diff = datetime.datetime.now() - t
-                    # print(f'Time passed to compute best action: {str(diff)}')
+                
+                frame_number += 1
+                
                 #TODO: add action to make_action: requires building the action
                 before_action = datetime.datetime.now()
                 a = build_action(len(actions[0]), best_action)
-                # print(a)
-                r = game.make_action(a)
+
+                r = game.make_action(a, 4)
                 cumulative_reward += r
                 diff = datetime.datetime.now() - before_action
                 # print(f'Time passed to perform one action on vizdoom: {str(diff)}')
                 isterminal = game.is_episode_finished()
-                print(isterminal)
                 if isterminal:
                     new_state_buffer = state_buffer.copy()
                 else:
