@@ -36,7 +36,7 @@ if __name__ == "__main__":
 
     game.set_window_visible(True)
 
-    game.set_doom_scenario_path("../scenarios/basic.wad")
+    game.set_doom_scenario_path("/home/gabrielwh/Downloads/Doom2.wad")
 
     # Sets map to start (scenario .wad files can contain many maps).
     game.set_doom_map("map01")
