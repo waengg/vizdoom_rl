@@ -1,0 +1,16 @@
+#include "zcommon.acs"
+
+global int 0:reward;
+
+script 1 OPEN {
+
+    reward = 0;
+
+}
+
+script 2 (void) {
+
+    reward = reward + 100;
+	Exit_Normal(0);
+
+}

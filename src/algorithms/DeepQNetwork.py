@@ -71,15 +71,9 @@ class DeepQNetwork:
             If state is terminal: y_j = reward
                             else: y_j = reward + \gamma * q(s, a, w)
         """
-        # y_j_terminal = np.array([x['state'] for x in batch if x['terminal'] is True])
-        # y_j_non_terminal = np.array([x for x in batch if x['terminal'] is False])
 
         t = datetime.datetime.now()
         y_true = np.array(self._future_q(batch))
-        # print(y_true)
-        # print(y_true)
-
-        # y_j = np.array([x['reward'] if x['terminal'] else self.future_q(x) for x in batch])
         dummy_y_true = [y_true, np.ones((len(batch),))]
 
         self.model.fit([states, actions, y_true], dummy_y_true, epochs=1, batch_size=self.batch_size, verbose=0)
@@ -104,7 +98,7 @@ class DeepQNetwork:
         in_layer = K.layers.Input(self.input_dims + (self.frames_per_state,), name='state')
         x = K.layers.Conv2D(16, [8, 8], strides=(4, 4), activation='relu')(in_layer)
         x = K.layers.Conv2D(32, [4, 4], strides=(2, 2), activation='relu')(x)
-        x = K.layers.Conv2D(64, [3, 3], strides=(1, 1), activation='relu')(x)
+        # x = K.layers.Conv2D(64, [3, 3], strides=(1, 1), activation='relu')(x)
         x = K.layers.Flatten()(x)
         x = K.layers.Dense(256, activation='relu')(x)
         q = K.layers.Dense(len(self.actions), name='q_values')(x)
@@ -144,5 +138,3 @@ class DeepQNetwork:
             ])[0]
         else:
             return self.model.predict([state])[0]
-
-# q = DeepQNetwork((112, 112), [1,2,3], training=True)

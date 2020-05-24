@@ -134,7 +134,7 @@ if __name__ == "__main__":
     game.set_doom_map("map01")
 
     # Sets resolution. Default is 320X240
-    game.set_screen_resolution(vzd.ScreenResolution.RES_640X480)
+    game.set_screen_resolution(vzd.ScreenResolution.RES_320x240)
 
     # Sets the screen buffer format. Not used here but now you can change it. Default is CRCGCB.
     game.set_screen_format(vzd.ScreenFormat.GRAY8)
@@ -207,7 +207,7 @@ if __name__ == "__main__":
 
     tf.config.experimental_run_functions_eagerly(False)
     # Run this many episodes
-    episodes = 1000
+    episodes = 10000
     resolution = (640, 480)
     dims = (resolution[0]//4, resolution[1]//4)
     frames_per_state = 4
@@ -218,7 +218,7 @@ if __name__ == "__main__":
     #TODO: simplify game loop: collect state -> perform action -> collect next state -> train
 
     try:
-        eval_states = dry_run(game, 2000, actions)
+        eval_states = dry_run(game, 20000, actions)
         frame_number = 0
         for i in range(episodes):
             print(f'Episode {i}: Average Q: {eval_average_q(eval_states, dql)}')
