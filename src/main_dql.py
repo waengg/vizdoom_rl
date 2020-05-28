@@ -26,7 +26,7 @@ from time import sleep
 
 USE_GPU = True
 DEVICES = None
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 if USE_GPU:
     DEVICES = tf.config.experimental.list_physical_devices('GPU')
@@ -38,15 +38,7 @@ else:
     tf.config.experimental.set_visible_devices(devices=[], device_type='GPU')
 
 tf.compat.v1.disable_eager_execution()
-    
 
-
-# tf.config.set_logical_device_configuration(gpus[0], [tf.config.LogicalDeviceConfiguration(memory_limit=2048)])
-# tf.config.experimental.set_virtual_device_configuration(gpus[0], [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=2048)])
-# gpus = tf.config.experimental.list_physical_devices('GPU')
-# # gpu = list(filter(lambda g: g.name.split(':')[-1] == '0', gpus))[0]
-# for gpu in gpus:    
-#     tf.config.experimental.set_memory_growth(gpu, True)
 from algorithms.DeepQNetwork import DeepQNetwork
 import numpy as np
 from vizdoom import vizdoom as vzd
@@ -75,7 +67,7 @@ def build_memory_state(state, action, reward, new_state, is_terminal):
         'terminal': is_terminal
     }
 
-def dry_run(game, n_states, actions):
+def dry_run(game, n_states, actions, available_maps):
     visited_states = []
     state_buffer = deque(maxlen=4)
     game.new_episode()
@@ -95,13 +87,13 @@ def dry_run(game, n_states, actions):
         if game.is_episode_finished():
             game.new_episode()
             state_buffer.clear()
+            game.close()
+            setup_game(game, choice(available_maps))
     return np.array(visited_states)
 
 def eval_average_q(states, network):
     q_vals = network.get_actions(states)
-    print(q_vals)
     argmax = np.argmax(q_vals, axis=1)
-    print(len(argmax), argmax.shape)
     max_values = np.array([q_vals[i][argmax[i]] for i in range(len(argmax))])
     return np.mean(max_values)
 
@@ -110,117 +102,75 @@ def limit_gpu_usage():
     for gpu in gpus:
         tf.config.experimental.set_memory_growth(gpu, True)
 
-def create_game():
-    pass
+def select_random_map(available_maps):
+    chosen_map = choice(available_maps)
 
-if __name__ == "__main__":
-#    gpus = tf.config.experimental.list_physical_devices('GPU')
-#    limit_gpu_usage('0')
-# Create DoomGame instance. It will run the game and communicate with you.
-    game = vzd.DoomGame()
+def setup_game(game, wad):
 
-    #TODO: remove every ViZDoom configuration code and create a cfg file containing them
-    game.set_window_visible(False)
+    print(f'Setting up map {wad["name"]}')
+
     # Now it's time for configuration!
     # load_config could be used to load configuration instead of doing it here with code.
     # If load_config is used in-code configuration will also work - most recent changes will add to previous ones.
-    # game.load_config("../../scenarios/basic.cfg")
+    game.load_config("../scenarios/configs/training.cfg")
 
     # Sets path to additional resources wad file which is basically your scenario wad.
     # If not specified default maps will be used and it's pretty much useless... unless you want to play good old Doom.
-    game.set_doom_scenario_path("../scenarios/basic.wad")
+    game.set_doom_scenario_path(f"../scenarios/{wad['name']}")
 
     # Sets map to start (scenario .wad files can contain many maps).
-    game.set_doom_map("map01")
-
-    # Sets resolution. Default is 320X240
-    game.set_screen_resolution(vzd.ScreenResolution.RES_320x240)
-
-    # Sets the screen buffer format. Not used here but now you can change it. Default is CRCGCB.
-    game.set_screen_format(vzd.ScreenFormat.GRAY8)
-
-    # Enables depth buffer.
-    game.set_depth_buffer_enabled(True)
-
-    # Enables labeling of in game objects labeling.
-    game.set_labels_buffer_enabled(True)
-
-    # Enables buffer with top down map of the current episode/level.
-    game.set_automap_buffer_enabled(True)
-
-    # Enables information about all objects present in the current episode/level.
-    game.set_objects_info_enabled(True)
-
-    # Enables information about all sectors (map layout).
-    game.set_sectors_info_enabled(True)
-
-    # Sets other rendering options (all of these options except crosshair are enabled (set to True) by default)
-    game.set_render_hud(False)
-    game.set_render_minimal_hud(False)  # If hud is enabled
-    game.set_render_crosshair(False)
-    game.set_render_weapon(True)
-    game.set_render_decals(False)  # Bullet holes and blood on the walls
-    game.set_render_particles(False)
-    game.set_render_effects_sprites(False)  # Smoke and blood
-    game.set_render_messages(False)  # In-game messages
-    game.set_render_corpses(False)
-    game.set_render_screen_flashes(True)  # Effect upon taking damage or picking up items
+    game.set_doom_map(wad['map'])
 
     # Adds buttons that will be allowed.
-    game.add_available_button(vzd.Button.MOVE_LEFT)
-    game.add_available_button(vzd.Button.MOVE_RIGHT)
-    game.add_available_button(vzd.Button.ATTACK)
-
-    # Adds game variables that will be included in state.
-    game.add_available_game_variable(vzd.GameVariable.AMMO2)
-
-    # Causes episodes to finish after 200 tics (actions)
-    game.set_episode_timeout(120)
-
-    # Makes episodes start after 10 tics (~after raising the weapon)
-    game.set_episode_start_time(10)
+    # game.add_available_button(vzd.Button.MOVE_LEFT)
+    # game.add_available_button(vzd.Button.MOVE_RIGHT)
+    # game.add_available_button(vzd.Button.MOVE_FORWARD)
+    # game.add_available_button(vzd.Button.TURN_LEFT)
+    # game.add_available_button(vzd.Button.TURN_RIGHT)
+    # game.add_available_button(vzd.Button.USE)
 
     # Makes the window appear (turned on by default)
     #game.set_window_visible(True)
 
-    # Turns on the sound. (turned off by default)
-    game.set_sound_enabled(False)
-
-    # Sets the livin reward (for each move) to -1
-    game.set_living_reward(-1)
-    game.get_game_variable
-    # Sets ViZDoom mode (PLAYER, ASYNC_PLAYER, SPECTATOR, ASYNC_SPECTATOR, PLAYER mode is default)
-    game.set_mode(vzd.Mode.PLAYER)
-
-    # Enables engine output to console.
-    #game.set_console_enabled(True)
-
     # Initialize the game. Further configuration won't take any effect from now on.
     game.init()
 
-    # Define some actions. Each list entry corresponds to declared buttons:
-    # MOVE_LEFT, MOVE_RIGHT, ATTACK
-    # game.get_available_buttons_size() can be used to check the number of available buttons.
-    # 5 more combinations are naturally possible but only 3 are included for transparency when watching.
-    actions = [[True, False, False], [False, True, False], [False, False, True]]
+if __name__ == "__main__":
+    # Create DoomGame instance. It will run the game and communicate with you.
+
+    # #TODO: remove every ViZDoom configuration code and create a cfg file containing them
+    available_maps = [
+        {'name': 'fork_corridor.wad', 'map': 'MAP01'},
+        {'name': 'simple_corridor.wad', 'map': 'MAP01'},
+        {'name': 't_corridor.wad', 'map': 'MAP01'},
+    ]
+    game = vzd.DoomGame()
+    setup_game(game, choice(available_maps))
+    n_actions = game.get_available_buttons_size()
+
+    actions = build_all_actions(n_actions)
+
     # find a way to create this array in a smarter way
 
     tf.config.experimental_run_functions_eagerly(False)
     # Run this many episodes
     episodes = 10000
-    resolution = (640, 480)
+    resolution = (320, 240)
     dims = (resolution[0]//4, resolution[1]//4)
     frames_per_state = 4
 
-    dql = DeepQNetwork(dims, actions, training=True)
+    dql = DeepQNetwork(dims, n_actions, training=True)
     state_buffer = deque(maxlen=4)
 
     #TODO: simplify game loop: collect state -> perform action -> collect next state -> train
 
     try:
-        eval_states = dry_run(game, 20000, actions)
+        eval_states = dry_run(game, 20000, actions, available_maps)
+        setup_game(game, choice(available_maps))
         frame_number = 0
+        t = datetime.datetime.now()
         for i in range(episodes):
+            print(f'Collecting Average Q for weights of episode {i}...')
             print(f'Episode {i}: Average Q: {eval_average_q(eval_states, dql)}')
             game.new_episode()
             cumulative_reward = 0.
@@ -236,19 +186,20 @@ if __name__ == "__main__":
                 rand = random()
                 epsilon = dql.next_eps(frame_number)
                 if rand <= epsilon:
-                    best_action = randint(0, len(actions[0]) - 1)
+                    best_action = randint(0, n_actions)
                 else:
-                    q_vals = dql.get_actions(np.array(state_buffer).reshape(1,160,120,4))
+                    q_vals = dql.get_actions(np.array(state_buffer).reshape((1, 80, 60, 4)))
                     best_action = np.argmax(q_vals)
-                
+
                 frame_number += 1
-                
-                #TODO: add action to make_action: requires building the action
+
                 before_action = datetime.datetime.now()
-                a = build_action(len(actions[0]), best_action)
+                a = build_action(n_actions, best_action)
 
                 r = game.make_action(a, 4)
                 cumulative_reward += r
+                if r > 90:
+                    print(f'I guess the bot did find the end: {r}')
                 diff = datetime.datetime.now() - before_action
                 # print(f'Time passed to perform one action on vizdoom: {str(diff)}')
                 isterminal = game.is_episode_finished()
@@ -263,17 +214,17 @@ if __name__ == "__main__":
                 memory_state = build_memory_state(state_buffer, best_action, r, new_state_buffer, isterminal)
                 dql.add_transition(memory_state)
                 dql.train()
-                diff = datetime.datetime.now() - t
+            diff = datetime.datetime.now() - t
             state_buffer.clear()
+            game.close()
+            setup_game(game, choice(available_maps))
                 # print(f'Time passed to conclude a training cycle: {str(diff)}')
 
-            print(f'End of episode {i}. Episode reward: {cumulative_reward}')
-            dql.save_weights('../weights/dqn_first_try')
-            sleep(1)
+            print(f'End of episode {i}. Episode reward: {cumulative_reward}. Time to finish episode: {str(diff)}')
+            dql.save_weights('../weights/dqn_training_maps_googlenet2')
 
 
-                
-        
+
         # Sets time that will pause the engine after each action (in seconds)
         # Without this everything would go too fast for you to keep track of what's happening.
         # sleep_time = 1.0 / vzd.DEFAULT_TICRATE  # = 0.028

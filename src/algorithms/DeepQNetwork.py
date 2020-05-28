@@ -3,25 +3,24 @@ from collections import deque
 from tensorflow import keras as K
 import datetime
 
-# from layers import Layers 
+# from layers import Layers
 import cv2
 from random import sample, uniform, randint
 import numpy as np
 
 class DeepQNetwork:
 
-    def __init__(self, dims, actions, frames_per_state=4, e_prob=0.1, start_eps=1.0, end_eps=0.1,
-                anneal_eps=True, anneal_until=20000, memsize=200000, gamma=0.80, training=False, batch_size=32):
-        
-        
-        self.TAG = DeepQNetwork.__name__
+    def __init__(self, dims, n_actions, frames_per_state=4, start_eps=1.0, end_eps=0.1,
+                anneal_eps=True, anneal_until=750000, memsize=90000, gamma=0.9, training=False, batch_size=32):
+
+
+        self.TAG            = DeepQNetwork.__name__
         self.input_dims     = dims
-        self.actions        = actions
+        self.n_actions      = n_actions
         self.start_eps      = start_eps
         self.end_eps        = end_eps
         self.anneal_eps     = anneal_eps
         self.anneal_until   = anneal_until
-        self.e_prob         = e_prob
         self.frames_per_state = frames_per_state
         # each sample is described as a 5-tuple (s_t (4 sequential states), a_t, r_t+1, s_t+1 (last 3 from s_t + 1 new), isterminal)
         self.mem            = deque(maxlen=memsize)
@@ -52,11 +51,13 @@ class DeepQNetwork:
 
     def next_eps(self, frame_num):
         if frame_num > self.anneal_until:
-            return self.end_eps
+            eps = self.end_eps
         else:
-            return self.start_eps - ((self.start_eps - self.end_eps) / \
+            eps = self.start_eps - ((self.start_eps - self.end_eps) / \
                 self.anneal_until * frame_num)
-
+        if frame_num % 1000 == 0:
+            print(f'Using eps {eps} for frame {frame_num}.')
+        return eps
 
     def train(self):
         #From a batch sampled from transition memory, train the model
@@ -78,7 +79,7 @@ class DeepQNetwork:
 
         self.model.fit([states, actions, y_true], dummy_y_true, epochs=1, batch_size=self.batch_size, verbose=0)
         # with tf.GradientTape() as tape:
-        #     samples = self.get_samples()     
+        #     samples = self.get_samples()
 
     def _future_q(self, batch):
         batch_size = len(batch)
@@ -94,14 +95,16 @@ class DeepQNetwork:
         bellman = [self.gamma * q[i][argmax[i]] if not batch[i]['terminal'] else 0 for i in range(0, len(q))]
         return [mem_entry['reward'] + bellman[i] for i, mem_entry in enumerate(batch)]
 
-    def build_model(self, training=True):
+    def build_model(self, training=True, dueling=False):
         in_layer = K.layers.Input(self.input_dims + (self.frames_per_state,), name='state')
         x = K.layers.Conv2D(16, [8, 8], strides=(4, 4), activation='relu')(in_layer)
         x = K.layers.Conv2D(32, [4, 4], strides=(2, 2), activation='relu')(x)
         # x = K.layers.Conv2D(64, [3, 3], strides=(1, 1), activation='relu')(x)
         x = K.layers.Flatten()(x)
         x = K.layers.Dense(256, activation='relu')(x)
-        q = K.layers.Dense(len(self.actions), name='q_values')(x)
+        q = K.layers.Dense(self.n_actions, name='q_values')(x)
+        if dueling:
+            pass
         if training:
             transition_action = K.layers.Input((2,), name='transition_action', dtype='int32')
             y_true = K.layers.Input((1,), name="y_true", dtype='float32')
@@ -113,6 +116,8 @@ class DeepQNetwork:
             return K.Model(in_layer, q)
 
     def compile_model(self):
+        # lr_schedule = K.optimizers.schedules.ExponentialDecay(1e-2, 400000, 0.9)
+        # optimizer = K.optimizers.Adam(learning_rate=lr_schedule)
         optimizer = K.optimizers.Adam()
         losses = [
             lambda y_true, y_pred: K.backend.zeros_like(y_pred),
@@ -130,11 +135,17 @@ class DeepQNetwork:
         if state.ndim != 4:
             state = state.reshape((1,) + self.input_dims + (self.frames_per_state,))
         if self.training:
-            batch_size = len(state)
-            return self.model.predict([
-                state,
-                np.ones((batch_size, 2)),
-                np.ones((batch_size, 1)),
-            ])[0]
+            batch_size = int(len(state) / self.batch_size)
+            batch_size = batch_size if batch_size > 0 else 1
+            split_batches = np.array_split(state, batch_size, axis=0)
+            # add each batch processed into a unique array for later analysis
+            result = []
+            for batch in split_batches:
+                result.extend(self.model.predict([
+                    batch,
+                    np.ones((len(batch), 2)),
+                    np.ones((len(batch), 1)),
+                ])[0])
+            return np.array(result).reshape((len(state), self.n_actions))
         else:
             return self.model.predict([state])[0]
