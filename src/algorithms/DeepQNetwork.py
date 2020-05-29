@@ -11,7 +11,7 @@ import numpy as np
 class DeepQNetwork:
 
     def __init__(self, dims, n_actions, frames_per_state=4, start_eps=1.0, end_eps=0.1,
-                anneal_eps=True, anneal_until=750000, memsize=90000, gamma=0.9, training=False, batch_size=32):
+                anneal_eps=True, anneal_until=80000, memsize=90000, gamma=0.9, training=False, batch_size=32):
 
 
         self.TAG            = DeepQNetwork.__name__
@@ -99,12 +99,12 @@ class DeepQNetwork:
         in_layer = K.layers.Input(self.input_dims + (self.frames_per_state,), name='state')
         x = K.layers.Conv2D(16, [8, 8], strides=(4, 4), activation='relu')(in_layer)
         x = K.layers.Conv2D(32, [4, 4], strides=(2, 2), activation='relu')(x)
-        # x = K.layers.Conv2D(64, [3, 3], strides=(1, 1), activation='relu')(x)
+        x = K.layers.Conv2D(64, [3, 3], strides=(1, 1), activation='relu')(x)
         x = K.layers.Flatten()(x)
         x = K.layers.Dense(256, activation='relu')(x)
-        q = K.layers.Dense(self.n_actions, name='q_values')(x)
         if dueling:
             pass
+        q = K.layers.Dense(self.n_actions, name='q_values')(x)
         if training:
             transition_action = K.layers.Input((2,), name='transition_action', dtype='int32')
             y_true = K.layers.Input((1,), name="y_true", dtype='float32')

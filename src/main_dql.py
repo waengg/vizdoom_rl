@@ -83,12 +83,14 @@ def dry_run(game, n_states, actions, available_maps):
         state_buffer_array = np.array(state_buffer)
         shape = state_buffer_array.shape
         visited_states.append(state_buffer_array.reshape(shape[1:3] + (4,)))
+        print(visited_states[0].shape)
+        #TODO: plot visited stated, just to ensure that they actually make sense
         game.make_action(choice(actions))
         if game.is_episode_finished():
-            game.new_episode()
             state_buffer.clear()
             game.close()
             setup_game(game, choice(available_maps))
+            game.new_episode()
     return np.array(visited_states)
 
 def eval_average_q(states, network):
@@ -140,9 +142,9 @@ if __name__ == "__main__":
 
     # #TODO: remove every ViZDoom configuration code and create a cfg file containing them
     available_maps = [
-        {'name': 'fork_corridor.wad', 'map': 'MAP01'},
+        # {'name': 'fork_corridor.wad', 'map': 'MAP01'},
         {'name': 'simple_corridor.wad', 'map': 'MAP01'},
-        {'name': 't_corridor.wad', 'map': 'MAP01'},
+        # {'name': 't_corridor.wad', 'map': 'MAP01'},
     ]
     game = vzd.DoomGame()
     setup_game(game, choice(available_maps))
@@ -155,7 +157,7 @@ if __name__ == "__main__":
     tf.config.experimental_run_functions_eagerly(False)
     # Run this many episodes
     episodes = 10000
-    resolution = (320, 240)
+    resolution = (640, 480)
     dims = (resolution[0]//4, resolution[1]//4)
     frames_per_state = 4
 
@@ -166,6 +168,7 @@ if __name__ == "__main__":
 
     try:
         eval_states = dry_run(game, 20000, actions, available_maps)
+        print(eval_states, eval_states.shape)
         setup_game(game, choice(available_maps))
         frame_number = 0
         t = datetime.datetime.now()
@@ -221,7 +224,7 @@ if __name__ == "__main__":
                 # print(f'Time passed to conclude a training cycle: {str(diff)}')
 
             print(f'End of episode {i}. Episode reward: {cumulative_reward}. Time to finish episode: {str(diff)}')
-            dql.save_weights('../weights/dqn_training_maps_googlenet2')
+            dql.save_weights('../weights/dqn_only_simple_googlenet2')
 
 
 
