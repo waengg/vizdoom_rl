@@ -40,10 +40,10 @@ if __name__ == "__main__":
 
     game.set_window_visible(True)
 
-    game.set_doom_scenario_path("../scenarios/doom1_edited.wad")
+    game.set_doom_scenario_path("../scenarios/simple_corridor.wad")
 
     # Sets map to start (scenario .wad files can contain many maps).
-    game.set_doom_map("E1M1")
+    game.set_doom_map("MAP01")
 
     # Sets resolution. Default is 320X240
     game.set_screen_resolution(vzd.ScreenResolution.RES_320X240)
@@ -67,7 +67,7 @@ if __name__ == "__main__":
     game.set_sectors_info_enabled(True)
 
     # Sets other rendering options (all of these options except crosshair are enabled (set to True) by default)
-    game.set_render_hud(False)
+    game.set_render_hud(True)
     game.set_render_minimal_hud(False)  # If hud is enabled
     game.set_render_crosshair(False)
     game.set_render_weapon(True)
@@ -82,11 +82,9 @@ if __name__ == "__main__":
     game.add_available_button(vzd.Button.MOVE_LEFT)
     game.add_available_button(vzd.Button.MOVE_RIGHT)
     game.add_available_button(vzd.Button.MOVE_FORWARD)
-    game.add_available_button(vzd.Button.MOVE_BACKWARD)
     game.add_available_button(vzd.Button.TURN_LEFT)
     game.add_available_button(vzd.Button.TURN_RIGHT)
     game.add_available_button(vzd.Button.USE)
-    game.add_available_button(vzd.Button.ATTACK)
 
     # Adds game variables that will be included in state.
     game.add_available_game_variable(vzd.GameVariable.AMMO2)
@@ -121,11 +119,11 @@ if __name__ == "__main__":
     # Run this many episodes
     episodes = 1000
     resolution = (320, 240)
-    dims = (resolution[0]//4, resolution[1]//4)
+    dims = (resolution[1]//4, resolution[0]//4)
     frames_per_state = 4
 
-    dql = DeepQNetwork(dims, actions, training=False)
-    dql.load_weights('../weights/dqn_doom_e1m1')
+    dql = DeepQNetwork(dims, n_actions, training=False)
+    # dql.load_weights('../weights/dqn_only_simple_googlenet2')
     state_buffer = deque(maxlen=4)
     # sleep_time = 1.0 / vzd.DEFAULT_TICRATE  # = 0.028
 
@@ -133,18 +131,29 @@ if __name__ == "__main__":
         while not game.is_episode_finished():
             state = game.get_state()
             frame = state.screen_buffer
-            plt.imshow(frame, cmap='gray')
-            plt.show()
-            sleep(0.5)
+            print(frame.shape)
+            # plt.imshow(frame, cmap='gray')
+            # plt.show()
+            # sleep(0.5)
             processed_frame = dql.preprocess(frame)
             if len(state_buffer) == 0:
                 [state_buffer.append(processed_frame) for _ in range(frames_per_state)]
             else:
                 state_buffer.append(processed_frame)
-            q_vals = dql.get_actions(np.array(state_buffer).reshape(1,80,60,4))
+            # for f in state_buffer:
+            #     print('shape:', f.shape)
+            #     plt.imshow(np.squeeze(f), cmap='gray')
+            #     plt.show()
+            #     sleep(0.3)
+            q_vals = dql.get_actions(np.expand_dims(np.array(state_buffer), axis=0))
+            print(q_vals)
+            eps = 0.01
+            # # if random() < eps:
+            # a = choice(actions)
+            # # else:
             best_action = np.argmax(q_vals)
             a = build_action(n_actions, best_action)
-            r = game.make_action(a)
+            r = game.make_action(a, 4)
             # if sleep_time > 0:
             #     sleep(sleep_time)
         state_buffer.clear()

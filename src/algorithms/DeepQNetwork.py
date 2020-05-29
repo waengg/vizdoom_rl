@@ -45,8 +45,9 @@ class DeepQNetwork:
         """
         array = np.array(frame)
         # assumes that the current config uses screen format GRAY8
-        resized = cv2.resize(frame.copy(), self.input_dims[::-1])
-        out = resized.astype('float32')
+        resized = cv2.resize(array.copy(), self.input_dims[::-1])
+        out = resized
+        # out = array.astype('float32')
         return np.reshape(out, out.shape + (1,))
 
     def next_eps(self, frame_num):
@@ -99,7 +100,7 @@ class DeepQNetwork:
         in_layer = K.layers.Input(self.input_dims + (self.frames_per_state,), name='state')
         x = K.layers.Conv2D(16, [8, 8], strides=(4, 4), activation='relu')(in_layer)
         x = K.layers.Conv2D(32, [4, 4], strides=(2, 2), activation='relu')(x)
-        # x = K.layers.Conv2D(64, [3, 3], strides=(1, 1), activation='relu')(x)
+        x = K.layers.Conv2D(64, [3, 3], strides=(1, 1), activation='relu')(x)
         x = K.layers.Flatten()(x)
         x = K.layers.Dense(256, activation='relu')(x)
         if dueling:
@@ -110,6 +111,7 @@ class DeepQNetwork:
             y_true = K.layers.Input((1,), name="y_true", dtype='float32')
             masked_actions = K.layers.Lambda(lambda t: tf.gather_nd(t, transition_action))(q)
             loss = K.layers.Subtract()([y_true, masked_actions])
+            print(loss, loss.shape)
             loss = K.layers.Lambda(lambda t: K.backend.square(t), name='loss')(loss)
             return K.Model([in_layer, transition_action, y_true], [q, loss])
         else:
@@ -133,7 +135,7 @@ class DeepQNetwork:
 
     def get_actions(self, state):
         if state.ndim != 4:
-            state = state.reshape((1,) + self.input_dims + (self.frames_per_state,))
+            state = np.expand_dims(state, axis=0)
         if self.training:
             batch_size = int(len(state) / self.batch_size)
             batch_size = batch_size if batch_size > 0 else 1
@@ -141,11 +143,13 @@ class DeepQNetwork:
             # add each batch processed into a unique array for later analysis
             result = []
             for batch in split_batches:
-                result.extend(self.model.predict([
+                model_out = self.model.predict([
                     batch,
-                    np.ones((len(batch), 2)),
-                    np.ones((len(batch), 1)),
-                ])[0])
+                    np.zeros((len(batch), 2)),
+                    np.zeros((len(batch), 1)),
+                ])
+                result.extend(model_out[0])
+                print(model_out[1], model_out[1].shape)
             return np.array(result).reshape((len(state), self.n_actions))
         else:
             return self.model.predict([state])[0]

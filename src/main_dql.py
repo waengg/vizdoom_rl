@@ -23,6 +23,7 @@ print(f'Running TensorFlow v{tf.__version__}')
 import os
 from random import random, randint
 from time import sleep
+from matplotlib import pyplot as plt
 
 USE_GPU = True
 DEVICES = None
@@ -53,11 +54,11 @@ def build_all_actions(n_actions):
 
 def build_memory_state(state, action, reward, new_state, is_terminal):
     state_array = np.array(state)
-    sa_shape = state_array.shape
-    state_array = state_array.reshape(sa_shape[1:3] + (4,))
+    # state_array = state_array.reshape(sa_shape[1:3] + (4,))
+    state_array = np.squeeze(np.rollaxis(state_array, 0, 3))
     new_state_array = np.array(new_state)
-    nsa_shape = new_state_array.shape
-    new_state_array = new_state_array.reshape(nsa_shape[1:3] + (4,))
+    # new_state_array = new_state_array.reshape(nsa_shape[1:3] + (4,))
+    new_state_array = np.squeeze(np.rollaxis(new_state_array, 0, 3))
     return {
         'state': state_array,
         'action': action,
@@ -80,9 +81,14 @@ def dry_run(game, n_states, actions, available_maps):
         else:
             state_buffer.append(processed_frame)
         state_buffer_array = np.array(state_buffer)
-        shape = state_buffer_array.shape
-        visited_states.append(state_buffer_array.reshape(shape[1:3] + (4,)))
-        print(visited_states[0].shape)
+
+        tmp = np.rollaxis(np.expand_dims(state_buffer_array, axis=-1), 0, 3)
+        # test = state_buffer_array[0,:,:]
+        # test = np.reshape(state_buffer_array, shape[1:3] + (4,))
+        # plt.imshow(np.squeeze(test), cmap='gray')
+        # plt.show()
+        # sleep(0.5)
+        visited_states.append(np.squeeze(tmp))
         #TODO: plot visited stated, just to ensure that they actually make sense
         game.make_action(choice(actions))
         if game.is_episode_finished():
@@ -156,8 +162,8 @@ if __name__ == "__main__":
     tf.config.experimental_run_functions_eagerly(False)
     # Run this many episodes
     episodes = 10000
-    resolution = (640, 480)
-    dims = (resolution[0]//4, resolution[1]//4)
+    resolution = (320, 240)
+    dims = (resolution[1]//2, resolution[0]//2)
     frames_per_state = 4
 
     dql = DeepQNetwork(dims, n_actions, training=True)
@@ -166,8 +172,7 @@ if __name__ == "__main__":
     #TODO: simplify game loop: collect state -> perform action -> collect next state -> train
 
     try:
-        eval_states = dry_run(game, 20000, actions, available_maps)
-        print(eval_states, eval_states.shape)
+        eval_states = dry_run(game, 20, actions, available_maps)
         setup_game(game, choice(available_maps))
         frame_number = 0
         t = datetime.datetime.now()
@@ -186,11 +191,14 @@ if __name__ == "__main__":
                 else:
                     state_buffer.append(processed_frame)
                 rand = random()
-                epsilon = dql.next_eps(frame_number)
+                # epsilon = dql.next_eps(frame_number)
+                epsilon = 0
                 if rand <= epsilon:
                     best_action = randint(0, n_actions)
                 else:
-                    q_vals = dql.get_actions(np.array(state_buffer).reshape((1, 80, 60, 4)))
+                    state_array = np.array(state_buffer)
+                    state_array = np.expand_dims(np.squeeze(np.rollaxis(state_array, 0, 3)), axis=0)
+                    q_vals = dql.get_actions(state_array)
                     best_action = np.argmax(q_vals)
 
                 frame_number += 1
@@ -225,61 +233,6 @@ if __name__ == "__main__":
             print(f'End of episode {i}. Episode reward: {cumulative_reward}. Time to finish episode: {str(diff)}')
             dql.save_weights('../weights/dqn_only_simple_googlenet2')
 
-
-        # Sets time that will pause the engine after each action (in seconds)
-        # Without this everything would go too fast for you to keep track of what's happening.
-        # sleep_time = 1.0 / vzd.DEFAULT_TICRATE  # = 0.028
-
-        # for i in range(episodes):
-        #     print("Episode #" + str(i + 1))
-
-        #     # Starts a new episode. It is not needed right after init() but it doesn't cost much. At least the loop is nicer.
-        #     game.new_episode()
-
-        #     while not game.is_episode_finished():
-
-        #         # Gets the state
-        #         state = game.get_state()
-
-        #         # Which consists of:
-        #         n = state.number
-        #         variables = state.game_variables
-        #         screen_buf = state.screen_buffer
-        #         depth_buf = state.depth_buffer
-        #         labels_buf = state.labels_buffer
-        #         automap_buf = state.automap_buffer
-        #         labels = state.labels
-        #         objects = state.objects
-        #         sectors = state.sectors
-
-        #         # Games variables can be also accessed via:
-        #         #game.get_game_variable(GameVariable.AMMO2)
-
-        #         # Makes a random action and get remember reward.
-        #         r = game.make_action(choice(actions))
-
-        #         # Makes a "prolonged" action and skip frames:
-        #         # skiprate = 4
-        #         # r = game.make_action(choice(actions), skiprate)
-
-        #         # The same could be achieved with:
-        #         # game.set_action(choice(actions))
-        #         # game.advance_action(skiprate)
-        #         # r = game.get_last_reward()
-
-        #         # Prints state's game variables and reward.
-        #         print("State #" + str(n))
-        #         print("Game variables:", vars)
-        #         print("Reward:", r)
-        #         print("=====================")
-
-        #         if sleep_time > 0:
-        #             sleep(sleep_time)
-
-        #     # Check how the episode went.
-        #     print("Episode finished.")
-        #     print("Total reward:", game.get_total_reward())
-        #     print("************************")
     except Exception as e:
         traceback.print_exc()
         print(e)
