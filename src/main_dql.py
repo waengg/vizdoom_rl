@@ -38,7 +38,6 @@ else:
     tf.config.experimental.set_visible_devices(devices=[], device_type='GPU')
 
 tf.compat.v1.disable_eager_execution()
-
 from algorithms.DeepQNetwork import DeepQNetwork
 import numpy as np
 from vizdoom import vizdoom as vzd
@@ -225,7 +224,6 @@ if __name__ == "__main__":
 
             print(f'End of episode {i}. Episode reward: {cumulative_reward}. Time to finish episode: {str(diff)}')
             dql.save_weights('../weights/dqn_only_simple_googlenet2')
-
 
 
         # Sets time that will pause the engine after each action (in seconds)

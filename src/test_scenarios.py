@@ -10,6 +10,7 @@ print(f'Running TensorFlow v{tf.__version__}')
 import os
 from random import random, randint
 from time import sleep
+from matplotlib import pyplot as plt
 
 USE_GPU = False
 
@@ -31,18 +32,21 @@ from vizdoom import vizdoom as vzd
 def build_action(n_actions, index):
     return [True if i == index else False for i in range(0, n_actions)]
 
+def build_all_actions(n_actions):
+    return [build_action(n_actions, index) for index in range(0, n_actions)]
+
 if __name__ == "__main__":
     game = vzd.DoomGame()
 
     game.set_window_visible(True)
 
-    game.set_doom_scenario_path("/home/gabrielwh/Downloads/Doom2.wad")
+    game.set_doom_scenario_path("../scenarios/doom1_edited.wad")
 
     # Sets map to start (scenario .wad files can contain many maps).
-    game.set_doom_map("map01")
+    game.set_doom_map("E1M1")
 
     # Sets resolution. Default is 320X240
-    game.set_screen_resolution(vzd.ScreenResolution.RES_640X480)
+    game.set_screen_resolution(vzd.ScreenResolution.RES_320X240)
 
     # Sets the screen buffer format. Not used here but now you can change it. Default is CRCGCB.
     game.set_screen_format(vzd.ScreenFormat.GRAY8)
@@ -77,13 +81,18 @@ if __name__ == "__main__":
     # Adds buttons that will be allowed.
     game.add_available_button(vzd.Button.MOVE_LEFT)
     game.add_available_button(vzd.Button.MOVE_RIGHT)
+    game.add_available_button(vzd.Button.MOVE_FORWARD)
+    game.add_available_button(vzd.Button.MOVE_BACKWARD)
+    game.add_available_button(vzd.Button.TURN_LEFT)
+    game.add_available_button(vzd.Button.TURN_RIGHT)
+    game.add_available_button(vzd.Button.USE)
     game.add_available_button(vzd.Button.ATTACK)
 
     # Adds game variables that will be included in state.
     game.add_available_game_variable(vzd.GameVariable.AMMO2)
 
     # Causes episodes to finish after 200 tics (actions)
-    game.set_episode_timeout(120)
+    game.set_episode_timeout(10000)
 
     # Makes episodes start after 10 tics (~after raising the weapon)
     game.set_episode_start_time(10)
@@ -105,17 +114,18 @@ if __name__ == "__main__":
 
     # Initialize the game. Further configuration won't take any effect from now on.
     game.init()
-    actions = [[True, False, False], [False, True, False], [False, False, True]]
+    n_actions = game.get_available_buttons_size()
+    actions = build_all_actions(n_actions)
     # find a way to create this array in a smarter way
     tf.config.experimental_run_functions_eagerly(False)
     # Run this many episodes
     episodes = 1000
-    resolution = (640, 480)
+    resolution = (320, 240)
     dims = (resolution[0]//4, resolution[1]//4)
     frames_per_state = 4
 
     dql = DeepQNetwork(dims, actions, training=False)
-    dql.load_weights('../weights/dqn_first_try')
+    dql.load_weights('../weights/dqn_doom_e1m1')
     state_buffer = deque(maxlen=4)
     # sleep_time = 1.0 / vzd.DEFAULT_TICRATE  # = 0.028
 
@@ -123,14 +133,17 @@ if __name__ == "__main__":
         while not game.is_episode_finished():
             state = game.get_state()
             frame = state.screen_buffer
+            plt.imshow(frame, cmap='gray')
+            plt.show()
+            sleep(0.5)
             processed_frame = dql.preprocess(frame)
             if len(state_buffer) == 0:
                 [state_buffer.append(processed_frame) for _ in range(frames_per_state)]
             else:
                 state_buffer.append(processed_frame)
-            q_vals = dql.get_actions(np.array(state_buffer).reshape(1,160,120,4))
+            q_vals = dql.get_actions(np.array(state_buffer).reshape(1,80,60,4))
             best_action = np.argmax(q_vals)
-            a = build_action(len(actions[0]), best_action)
+            a = build_action(n_actions, best_action)
             r = game.make_action(a)
             # if sleep_time > 0:
             #     sleep(sleep_time)

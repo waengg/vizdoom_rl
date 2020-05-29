@@ -142,3 +142,5 @@ dmypy.json
 # for now, ignore all weights
 
 weights/
+
+_vizdoom.ini
