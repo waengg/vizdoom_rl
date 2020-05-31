@@ -11,7 +11,7 @@ import numpy as np
 class DeepQNetwork:
 
     def __init__(self, dims, n_actions, frames_per_state=4, start_eps=1.0, end_eps=0.1,
-                anneal_eps=True, anneal_until=80000, memsize=90000, gamma=0.9, training=False, batch_size=32):
+                anneal_eps=True, anneal_until=120000, memsize=120000, gamma=0.9, training=False, dueling=False, batch_size=32):
 
 
         self.TAG            = DeepQNetwork.__name__
@@ -27,8 +27,10 @@ class DeepQNetwork:
         self.training       = training
         self.batch_size     = batch_size
         self.gamma          = gamma
+        self.dueling        = dueling
 
-        self.model          = self.build_model(training=training)
+        self.model          = self.build_model(training=training, dueling=dueling)
+        self.model.summary()
         if self.training:
             self.compile_model()
 
@@ -46,7 +48,7 @@ class DeepQNetwork:
         array = np.array(frame)
         # assumes that the current config uses screen format GRAY8
         resized = cv2.resize(array.copy(), self.input_dims[::-1])
-        out = resized
+        out = resized / 255.
         # out = array.astype('float32')
         return np.reshape(out, out.shape + (1,))
 
@@ -68,62 +70,66 @@ class DeepQNetwork:
         batch = sample(self.mem, self.batch_size)
         states = np.array([x['state'] for x in batch])
         actions = np.array([(i, x['action']) for i, x in enumerate(batch)])
-        """
-            as described in Mnih et al. 2015:
-            If state is terminal: y_j = reward
-                            else: y_j = reward + \gamma * q(s, a, w)
-        """
 
         t = datetime.datetime.now()
+        mask = np.zeros((len(batch), self.n_actions))
+        for i, action in actions:
+            mask[i][action] = 1.
         y_true = np.array(self._future_q(batch))
+        # print(y_true, y_true.shape)
+        # print(mask)
         dummy_y_true = [y_true, np.ones((len(batch),))]
 
-        self.model.fit([states, actions, y_true], dummy_y_true, epochs=1, batch_size=self.batch_size, verbose=0)
-        # with tf.GradientTape() as tape:
-        #     samples = self.get_samples()
+        self.model.fit([states, mask, y_true], dummy_y_true, epochs=1, batch_size=self.batch_size, verbose=0)
 
     def _future_q(self, batch):
         batch_size = len(batch)
         states = np.array([x['next_state'] for x in batch])
         q = self.model.predict([
             states,
-            np.ones((batch_size, 2)),
+            np.ones((batch_size, self.n_actions)),
             np.ones((batch_size, 1))
         ])[0]
-        # print(q)
 
+        """
+            as described in Mnih et al. 2015:
+            If state is terminal: y_j = reward
+                            else: y_j = reward + \gamma * q(s, a, w)
+        """
         argmax = np.argmax(q, axis=1)
-        bellman = [self.gamma * q[i][argmax[i]] if not batch[i]['terminal'] else 0 for i in range(0, len(q))]
+        bellman = [self.gamma * q[i][argmax[i]] if not batch[i]['terminal'] else 0. for i in range(len(q))]
         return [mem_entry['reward'] + bellman[i] for i, mem_entry in enumerate(batch)]
 
     def build_model(self, training=True, dueling=False):
         in_layer = K.layers.Input(self.input_dims + (self.frames_per_state,), name='state')
-        x = K.layers.Conv2D(16, [8, 8], strides=(4, 4), activation='relu')(in_layer)
-        x = K.layers.Conv2D(32, [4, 4], strides=(2, 2), activation='relu')(x)
-        x = K.layers.Conv2D(64, [3, 3], strides=(1, 1), activation='relu')(x)
+        x = K.layers.Conv2D(32, [4, 4], strides=(4, 4), activation='relu')(in_layer)
+        x = K.layers.Conv2D(64, [4, 4], strides=(2, 2), activation='relu')(x)
+        x = K.layers.Conv2D(128, [4, 4], strides=(2, 2), activation='relu')(x)
         x = K.layers.Flatten()(x)
         x = K.layers.Dense(256, activation='relu')(x)
         if dueling:
-            pass
-        q = K.layers.Dense(self.n_actions, name='q_values')(x)
+            y = K.layers.Dense(self.n_actions + 1, activation='linear')(x)
+            q = K.layers.Lambda(lambda t: tf.expand_dims(t[:, 0], axis=-1) + t[:, 1:] - \
+                tf.reduce_mean(t[:, 1:], axis=1, keepdims=True), output_shape=(self.n_actions+1,))(y)
+        else:
+            q = K.layers.Dense(self.n_actions, name='q_values')(x)
         if training:
-            transition_action = K.layers.Input((2,), name='transition_action', dtype='int32')
+            mask = K.layers.Input((self.n_actions,), name='mask', dtype='float32')
             y_true = K.layers.Input((1,), name="y_true", dtype='float32')
-            masked_actions = K.layers.Lambda(lambda t: tf.gather_nd(t, transition_action))(q)
-            loss = K.layers.Subtract()([y_true, masked_actions])
-            print(loss, loss.shape)
-            loss = K.layers.Lambda(lambda t: K.backend.square(t), name='loss')(loss)
-            return K.Model([in_layer, transition_action, y_true], [q, loss])
+            loss = K.layers.Subtract()([y_true, q])
+            masked_loss = K.layers.Multiply()([loss, mask])
+            masked_loss = K.layers.Lambda(lambda t: K.backend.square(t), name='loss')(masked_loss)
+            return K.Model([in_layer, mask, y_true], [q, masked_loss])
         else:
             return K.Model(in_layer, q)
 
     def compile_model(self):
-        # lr_schedule = K.optimizers.schedules.ExponentialDecay(1e-2, 400000, 0.9)
-        # optimizer = K.optimizers.Adam(learning_rate=lr_schedule)
-        optimizer = K.optimizers.Adam()
+        # lr_schedule = K.optimizers.schedules.ExponentialDecay(1e-2, 100000, 0.99)
+        optimizer = K.optimizers.RMSprop()
+        # optimizer = K.optimizers.Adam()
         losses = [
             lambda y_true, y_pred: K.backend.zeros_like(y_pred),
-            lambda y_true, y_pred: y_pred,
+            lambda y_true, y_pred: tf.squeeze(y_pred),
         ]
         self.model.compile(optimizer=optimizer, loss=losses)
 
@@ -145,11 +151,10 @@ class DeepQNetwork:
             for batch in split_batches:
                 model_out = self.model.predict([
                     batch,
-                    np.zeros((len(batch), 2)),
+                    np.zeros((len(batch), self.n_actions)),
                     np.zeros((len(batch), 1)),
                 ])
                 result.extend(model_out[0])
-                print(model_out[1], model_out[1].shape)
             return np.array(result).reshape((len(state), self.n_actions))
         else:
             return self.model.predict([state])[0]

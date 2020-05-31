@@ -22,12 +22,13 @@ import tensorflow as tf
 print(f'Running TensorFlow v{tf.__version__}')
 import os
 from random import random, randint
+import time
 from time import sleep
 from matplotlib import pyplot as plt
 
 USE_GPU = True
 DEVICES = None
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 if USE_GPU:
     DEVICES = tf.config.experimental.list_physical_devices('GPU')
@@ -71,7 +72,8 @@ def dry_run(game, n_states, actions, available_maps):
     visited_states = []
     state_buffer = deque(maxlen=4)
     game.new_episode()
-    for _ in range(n_states):
+    for i in range(n_states):
+        print(i)
         #TODO: refactor state collection and preprocessing into a single function
         state = game.get_state()
         frame = state.screen_buffer
@@ -82,13 +84,13 @@ def dry_run(game, n_states, actions, available_maps):
             state_buffer.append(processed_frame)
         state_buffer_array = np.array(state_buffer)
 
-        tmp = np.rollaxis(np.expand_dims(state_buffer_array, axis=-1), 0, 3)
+        state_buffer_array = np.rollaxis(np.expand_dims(state_buffer_array, axis=-1), 0, 3)
         # test = state_buffer_array[0,:,:]
         # test = np.reshape(state_buffer_array, shape[1:3] + (4,))
         # plt.imshow(np.squeeze(test), cmap='gray')
         # plt.show()
         # sleep(0.5)
-        visited_states.append(np.squeeze(tmp))
+        visited_states.append(np.squeeze(state_buffer_array))
         #TODO: plot visited stated, just to ensure that they actually make sense
         game.make_action(choice(actions))
         if game.is_episode_finished():
@@ -100,6 +102,7 @@ def dry_run(game, n_states, actions, available_maps):
 
 def eval_average_q(states, network):
     q_vals = network.get_actions(states)
+    print(q_vals[500:520])
     argmax = np.argmax(q_vals, axis=1)
     max_values = np.array([q_vals[i][argmax[i]] for i in range(len(argmax))])
     return np.mean(max_values)
@@ -119,7 +122,7 @@ def setup_game(game, wad):
     # Now it's time for configuration!
     # load_config could be used to load configuration instead of doing it here with code.
     # If load_config is used in-code configuration will also work - most recent changes will add to previous ones.
-    game.load_config("../scenarios/configs/training.cfg")
+    game.load_config(f"../scenarios/configs/{wad['cfg']}")
 
     # Sets path to additional resources wad file which is basically your scenario wad.
     # If not specified default maps will be used and it's pretty much useless... unless you want to play good old Doom.
@@ -127,17 +130,6 @@ def setup_game(game, wad):
 
     # Sets map to start (scenario .wad files can contain many maps).
     game.set_doom_map(wad['map'])
-
-    # Adds buttons that will be allowed.
-    # game.add_available_button(vzd.Button.MOVE_LEFT)
-    # game.add_available_button(vzd.Button.MOVE_RIGHT)
-    # game.add_available_button(vzd.Button.MOVE_FORWARD)
-    # game.add_available_button(vzd.Button.TURN_LEFT)
-    # game.add_available_button(vzd.Button.TURN_RIGHT)
-    # game.add_available_button(vzd.Button.USE)
-
-    # Makes the window appear (turned on by default)
-    #game.set_window_visible(True)
 
     # Initialize the game. Further configuration won't take any effect from now on.
     game.init()
@@ -148,7 +140,9 @@ if __name__ == "__main__":
     # #TODO: remove every ViZDoom configuration code and create a cfg file containing them
     available_maps = [
         # {'name': 'fork_corridor.wad', 'map': 'MAP01'},
-        {'name': 'simple_corridor.wad', 'map': 'MAP01'},
+        # {'name': 'simple_corridor.wad', 'map': 'MAP01', 'cfg': 'training.cfg'},
+        {'name': 'deadly_corridor.wad', 'map': 'MAP01', 'cfg': 'deadly_corridor.cfg'},
+        # {'name': 'basic.wad', 'map': 'map01', 'cfg': 'basic.cfg'},
         # {'name': 't_corridor.wad', 'map': 'MAP01'},
     ]
     game = vzd.DoomGame()
@@ -163,16 +157,17 @@ if __name__ == "__main__":
     # Run this many episodes
     episodes = 10000
     resolution = (320, 240)
-    dims = (resolution[1]//2, resolution[0]//2)
+    dims = (resolution[1]//4, resolution[0]//4)
     frames_per_state = 4
 
-    dql = DeepQNetwork(dims, n_actions, training=True)
+    dql = DeepQNetwork(dims, n_actions, training=True, dueling=True)
     state_buffer = deque(maxlen=4)
 
     #TODO: simplify game loop: collect state -> perform action -> collect next state -> train
+    #TODO: check each and every line of this code. something MUST be off, it's impossible dude
 
     try:
-        eval_states = dry_run(game, 20, actions, available_maps)
+        eval_states = dry_run(game, 10000, actions, available_maps)
         setup_game(game, choice(available_maps))
         frame_number = 0
         t = datetime.datetime.now()
@@ -180,7 +175,9 @@ if __name__ == "__main__":
             print(f'Collecting Average Q for weights of episode {i}...')
             print(f'Episode {i}: Average Q: {eval_average_q(eval_states, dql)}')
             game.new_episode()
+            tic = 0
             cumulative_reward = 0.
+            start = time.time()
             while not game.is_episode_finished():
                 t = datetime.datetime.now()
                 state = game.get_state()
@@ -191,10 +188,9 @@ if __name__ == "__main__":
                 else:
                     state_buffer.append(processed_frame)
                 rand = random()
-                # epsilon = dql.next_eps(frame_number)
-                epsilon = 0
+                epsilon = dql.next_eps(frame_number)
                 if rand <= epsilon:
-                    best_action = randint(0, n_actions)
+                    best_action = randint(0, n_actions-1)
                 else:
                     state_array = np.array(state_buffer)
                     state_array = np.expand_dims(np.squeeze(np.rollaxis(state_array, 0, 3)), axis=0)
@@ -224,14 +220,15 @@ if __name__ == "__main__":
                 memory_state = build_memory_state(state_buffer, best_action, r, new_state_buffer, isterminal)
                 dql.add_transition(memory_state)
                 dql.train()
-            diff = datetime.datetime.now() - t
+                # print(f'Time to complete one training cycle: {time.time() - start}')
+            diff = time.time() - start
             state_buffer.clear()
             game.close()
             setup_game(game, choice(available_maps))
                 # print(f'Time passed to conclude a training cycle: {str(diff)}')
 
             print(f'End of episode {i}. Episode reward: {cumulative_reward}. Time to finish episode: {str(diff)}')
-            dql.save_weights('../weights/dqn_only_simple_googlenet2')
+            dql.save_weights('../weights/dqn_simple_dueling')
 
     except Exception as e:
         traceback.print_exc()
