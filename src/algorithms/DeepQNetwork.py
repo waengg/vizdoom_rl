@@ -2,6 +2,7 @@ import tensorflow as tf
 from collections import deque
 from tensorflow import keras as K
 import datetime
+from time import sleep
 
 # from layers import Layers
 import cv2
@@ -11,7 +12,7 @@ import numpy as np
 class DeepQNetwork:
 
     def __init__(self, dims, n_actions, frames_per_state=4, start_eps=1.0, end_eps=0.1,
-                anneal_eps=True, anneal_until=120000, memsize=120000, gamma=0.9, training=False, dueling=False, batch_size=32):
+                anneal_eps=True, anneal_until=120000, memsize=100000, gamma=0.9, training=False, dueling=False, batch_size=32):
 
 
         self.TAG            = DeepQNetwork.__name__
@@ -104,13 +105,20 @@ class DeepQNetwork:
         in_layer = K.layers.Input(self.input_dims + (self.frames_per_state,), name='state')
         x = K.layers.Conv2D(32, [4, 4], strides=(4, 4), activation='relu')(in_layer)
         x = K.layers.Conv2D(64, [4, 4], strides=(2, 2), activation='relu')(x)
-        x = K.layers.Conv2D(128, [4, 4], strides=(2, 2), activation='relu')(x)
+        x = K.layers.Conv2D(96, [4, 4], strides=(2, 2), activation='relu')(x)
         x = K.layers.Flatten()(x)
-        x = K.layers.Dense(256, activation='relu')(x)
+        # x = K.layers.Dense(256, activation='relu')(x)
         if dueling:
-            y = K.layers.Dense(self.n_actions + 1, activation='linear')(x)
-            q = K.layers.Lambda(lambda t: tf.expand_dims(t[:, 0], axis=-1) + t[:, 1:] - \
-                tf.reduce_mean(t[:, 1:], axis=1, keepdims=True), output_shape=(self.n_actions+1,))(y)
+            v = K.layers.Dense(64, activation='relu')(x)
+            v = K.layers.Dense(1, activation='linear')(v)
+            a = K.layers.Dense(64, activation='relu')(x)
+            a = K.layers.Dense(self.n_actions, activation='linear')(a)
+            add = K.layers.Add()([v, a])
+            q = K.layers.Subtract()([add, tf.reduce_mean(a, axis=1)])
+            # q = K.layers.Lambda(lambda t: )
+
+            # q = K.layers.Lambda(lambda t: tf.expand_dims(t[:, 0], axis=-1) + t[:, 1:] - \
+            #     tf.reduce_mean(t[:, 1:], axis=1, keepdims=True), output_shape=(self.n_actions+1,))(y)
         else:
             q = K.layers.Dense(self.n_actions, name='q_values')(x)
         if training:
@@ -125,7 +133,7 @@ class DeepQNetwork:
 
     def compile_model(self):
         # lr_schedule = K.optimizers.schedules.ExponentialDecay(1e-2, 100000, 0.99)
-        optimizer = K.optimizers.RMSprop()
+        optimizer = K.optimizers.RMSprop(learning_rate=1e-3)
         # optimizer = K.optimizers.Adam()
         losses = [
             lambda y_true, y_pred: K.backend.zeros_like(y_pred),

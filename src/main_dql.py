@@ -73,7 +73,6 @@ def dry_run(game, n_states, actions, available_maps):
     state_buffer = deque(maxlen=4)
     game.new_episode()
     for i in range(n_states):
-        print(i)
         #TODO: refactor state collection and preprocessing into a single function
         state = game.get_state()
         frame = state.screen_buffer
@@ -140,8 +139,8 @@ if __name__ == "__main__":
     # #TODO: remove every ViZDoom configuration code and create a cfg file containing them
     available_maps = [
         # {'name': 'fork_corridor.wad', 'map': 'MAP01'},
-        # {'name': 'simple_corridor.wad', 'map': 'MAP01', 'cfg': 'training.cfg'},
-        {'name': 'deadly_corridor.wad', 'map': 'MAP01', 'cfg': 'deadly_corridor.cfg'},
+        {'name': 'simple_corridor.wad', 'map': 'MAP01', 'cfg': 'training.cfg'},
+        # {'name': 'deadly_corridor.wad', 'map': 'MAP01', 'cfg': 'deadly_corridor.cfg'},
         # {'name': 'basic.wad', 'map': 'map01', 'cfg': 'basic.cfg'},
         # {'name': 't_corridor.wad', 'map': 'MAP01'},
     ]
@@ -157,7 +156,7 @@ if __name__ == "__main__":
     # Run this many episodes
     episodes = 10000
     resolution = (320, 240)
-    dims = (resolution[1]//4, resolution[0]//4)
+    dims = (resolution[1]//3, resolution[0]//3)
     frames_per_state = 4
 
     dql = DeepQNetwork(dims, n_actions, training=True, dueling=True)
@@ -167,7 +166,7 @@ if __name__ == "__main__":
     #TODO: check each and every line of this code. something MUST be off, it's impossible dude
 
     try:
-        eval_states = dry_run(game, 10000, actions, available_maps)
+        eval_states = dry_run(game, 20000, actions, available_maps)
         setup_game(game, choice(available_maps))
         frame_number = 0
         t = datetime.datetime.now()
@@ -210,6 +209,9 @@ if __name__ == "__main__":
                 # print(f'Time passed to perform one action on vizdoom: {str(diff)}')
                 isterminal = game.is_episode_finished()
                 if isterminal:
+                    # if r < 0:
+                    #     r = -100.
+                    # r = cumulative_reward
                     new_state_buffer = state_buffer.copy()
                 else:
                     new_state = game.get_state()
@@ -228,7 +230,7 @@ if __name__ == "__main__":
                 # print(f'Time passed to conclude a training cycle: {str(diff)}')
 
             print(f'End of episode {i}. Episode reward: {cumulative_reward}. Time to finish episode: {str(diff)}')
-            dql.save_weights('../weights/dqn_simple_dueling')
+            dql.save_weights('../weights/dqn_simple_dueling_corridor')
 
     except Exception as e:
         traceback.print_exc()
