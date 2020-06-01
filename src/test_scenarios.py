@@ -123,7 +123,7 @@ if __name__ == "__main__":
     frames_per_state = 4
 
     dql = DeepQNetwork(dims, n_actions, training=False)
-    # dql.load_weights('../weights/dqn_only_simple_googlenet2')
+    dql.load_weights('../weights/dqn_only_simple_googlenet2')
     state_buffer = deque(maxlen=4)
     # sleep_time = 1.0 / vzd.DEFAULT_TICRATE  # = 0.028
 
@@ -145,14 +145,17 @@ if __name__ == "__main__":
             #     plt.imshow(np.squeeze(f), cmap='gray')
             #     plt.show()
             #     sleep(0.3)
-            q_vals = dql.get_actions(np.expand_dims(np.array(state_buffer), axis=0))
+            state_array = np.array(state_buffer)
+            state_array = np.squeeze(np.rollaxis(state_array, 0, 3))
+            print(state_array.shape)
+            q_vals = dql.get_actions(state_array)
             print(q_vals)
             eps = 0.01
-            # # if random() < eps:
-            # a = choice(actions)
-            # # else:
-            best_action = np.argmax(q_vals)
-            a = build_action(n_actions, best_action)
+            if random() < eps:
+                a = choice(actions)
+            else:
+                best_action = np.argmax(q_vals)
+                a = build_action(n_actions, best_action)
             r = game.make_action(a, 4)
             # if sleep_time > 0:
             #     sleep(sleep_time)
