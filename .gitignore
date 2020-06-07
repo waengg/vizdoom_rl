@@ -140,7 +140,8 @@ dmypy.json
 
 # network stuff
 # for now, ignore all weights
-
 weights/
 
 _vizdoom.ini
+
+# ignore tensorboard logging?

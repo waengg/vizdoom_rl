@@ -25,10 +25,11 @@ from random import random, randint
 import time
 from time import sleep
 from matplotlib import pyplot as plt
+from shutil import rmtree
 
 USE_GPU = True
 DEVICES = None
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 if USE_GPU:
     DEVICES = tf.config.experimental.list_physical_devices('GPU')
@@ -39,7 +40,7 @@ else:
     tf.config.experimental.set_visible_devices(devices=DEVICES, device_type='CPU')
     tf.config.experimental.set_visible_devices(devices=[], device_type='GPU')
 
-tf.compat.v1.disable_eager_execution()
+# tf.compat.v1.disable_eager_execution()
 from algorithms.DeepQNetwork import DeepQNetwork
 import numpy as np
 from vizdoom import vizdoom as vzd
@@ -52,6 +53,22 @@ def build_action(n_actions, index):
 
 def build_all_actions(n_actions):
     return [build_action(n_actions, index) for index in range(0, n_actions)]
+
+def setup_tensorboard(path):
+    current_time = datetime.datetime.now().strftime('%d%m%Y-%H%M%S')
+    
+    train_log_dir = f'{path}/{current_time}/train'
+    print(train_log_dir)
+    os.makedirs(train_log_dir, exist_ok=True)
+    train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+    return train_summary_writer
+
+def write_tensorboard_data(writer, episode, avg_q, episode_reward, episode_loss):
+    with writer.as_default():
+        tf.summary.scalar('Average Q', avg_q, step=episode)
+        tf.summary.scalar('Episode Reward', episode_reward, step=episode)
+        tf.summary.scalar('Average Episode Loss', episode_loss, step=episode)
+    writer.flush()
 
 def build_memory_state(state, action, reward, new_state, is_terminal):
     state_array = np.array(state)
@@ -84,11 +101,6 @@ def dry_run(game, n_states, actions, available_maps):
         state_buffer_array = np.array(state_buffer)
 
         state_buffer_array = np.rollaxis(np.expand_dims(state_buffer_array, axis=-1), 0, 3)
-        # test = state_buffer_array[0,:,:]
-        # test = np.reshape(state_buffer_array, shape[1:3] + (4,))
-        # plt.imshow(np.squeeze(test), cmap='gray')
-        # plt.show()
-        # sleep(0.5)
         visited_states.append(np.squeeze(state_buffer_array))
         #TODO: plot visited stated, just to ensure that they actually make sense
         game.make_action(choice(actions))
@@ -118,13 +130,7 @@ def setup_game(game, wad):
 
     print(f'Setting up map {wad["name"]}')
 
-    # Now it's time for configuration!
-    # load_config could be used to load configuration instead of doing it here with code.
-    # If load_config is used in-code configuration will also work - most recent changes will add to previous ones.
     game.load_config(f"../scenarios/configs/{wad['cfg']}")
-
-    # Sets path to additional resources wad file which is basically your scenario wad.
-    # If not specified default maps will be used and it's pretty much useless... unless you want to play good old Doom.
     game.set_doom_scenario_path(f"../scenarios/{wad['name']}")
 
     # Sets map to start (scenario .wad files can contain many maps).
@@ -134,12 +140,15 @@ def setup_game(game, wad):
     game.init()
 
 if __name__ == "__main__":
+    train_name = 'simple_corridor_ddqn'
     # Create DoomGame instance. It will run the game and communicate with you.
 
     # #TODO: remove every ViZDoom configuration code and create a cfg file containing them
     available_maps = [
         # {'name': 'fork_corridor.wad', 'map': 'MAP01'},
         {'name': 'simple_corridor.wad', 'map': 'MAP01', 'cfg': 'training.cfg'},
+        # {'name': 'simple_corridor_distance.wad', 'map': 'MAP01', 'cfg': 'training.cfg'},
+        # {'name': 'my_way_home.wad', 'map': 'MAP01', 'cfg': 'my_way_home.cfg'},
         # {'name': 'deadly_corridor.wad', 'map': 'MAP01', 'cfg': 'deadly_corridor.cfg'},
         # {'name': 'basic.wad', 'map': 'map01', 'cfg': 'basic.cfg'},
         # {'name': 't_corridor.wad', 'map': 'MAP01'},
@@ -158,26 +167,32 @@ if __name__ == "__main__":
     resolution = (320, 240)
     dims = (resolution[1]//3, resolution[0]//3)
     frames_per_state = 4
+    last_avg_q = -np.inf
 
     dql = DeepQNetwork(dims, n_actions, training=True, dueling=True)
+    tb_writer = setup_tensorboard(f'../logs/{train_name}')
     state_buffer = deque(maxlen=4)
 
     #TODO: simplify game loop: collect state -> perform action -> collect next state -> train
     #TODO: check each and every line of this code. something MUST be off, it's impossible dude
 
     try:
-        eval_states = dry_run(game, 20000, actions, available_maps)
+        eval_states = dry_run(game, 10000, actions, available_maps)
         setup_game(game, choice(available_maps))
         frame_number = 0
         t = datetime.datetime.now()
         for i in range(episodes):
-            print(f'Collecting Average Q for weights of episode {i}...')
-            print(f'Episode {i}: Average Q: {eval_average_q(eval_states, dql)}')
             game.new_episode()
+            timeout = game.get_episode_timeout()
             tic = 0
             cumulative_reward = 0.
+            loss = 0.
+            initial_distance = vzd.doom_fixed_to_double(game.get_game_variable(vzd.GameVariable.USER2))
             start = time.time()
+            train_steps = 0
             while not game.is_episode_finished():
+                train_steps += 1
+                tic += 1.
                 t = datetime.datetime.now()
                 state = game.get_state()
                 frame = state.screen_buffer
@@ -200,18 +215,18 @@ if __name__ == "__main__":
 
                 before_action = datetime.datetime.now()
                 a = build_action(n_actions, best_action)
-
+                tic_reward = -(tic / timeout)
                 r = game.make_action(a, 4)
-                cumulative_reward += r
+                # dist = vzd.doom_fixed_to_double(game.get_game_variable(vzd.GameVariable.USER1))
+                # dist = dist / initial_distance
+                # r -= dist
+                cumulative_reward += r + tic_reward
                 if r > 90:
                     print(f'I guess the bot did find the end: {r}')
                 diff = datetime.datetime.now() - before_action
-                # print(f'Time passed to perform one action on vizdoom: {str(diff)}')
+
                 isterminal = game.is_episode_finished()
                 if isterminal:
-                    # if r < 0:
-                    #     r = -100.
-                    # r = cumulative_reward
                     new_state_buffer = state_buffer.copy()
                 else:
                     new_state = game.get_state()
@@ -221,8 +236,11 @@ if __name__ == "__main__":
                     new_state_buffer.append(processed_new_frame)
                 memory_state = build_memory_state(state_buffer, best_action, r, new_state_buffer, isterminal)
                 dql.add_transition(memory_state)
-                dql.train()
+                history = dql.train()
+                if history is not None:
+                    loss += history.history['loss'][0]
                 # print(f'Time to complete one training cycle: {time.time() - start}')
+            episode_loss = loss / train_steps
             diff = time.time() - start
             state_buffer.clear()
             game.close()
@@ -230,7 +248,18 @@ if __name__ == "__main__":
                 # print(f'Time passed to conclude a training cycle: {str(diff)}')
 
             print(f'End of episode {i}. Episode reward: {cumulative_reward}. Time to finish episode: {str(diff)}')
-            dql.save_weights('../weights/dqn_simple_dueling_corridor')
+            print(f'Collecting Average Q for weights of episode {i}...')
+            avg_q = eval_average_q(eval_states, dql)
+            print(f'Episode {i}: Average Q: {avg_q}')
+            write_tensorboard_data(tb_writer, i, avg_q, cumulative_reward, episode_loss)
+            if avg_q > last_avg_q:
+                print(f'Average Q {avg_q} greater than last average Q {last_avg_q}.')
+                last_avg_q = avg_q
+
+            else:
+                print(f'Average Q {avg_q} lower than last average Q {last_avg_q}.')
+            dql.save_weights(f'../weights/{train_name}_exponentiallr')
+
 
     except Exception as e:
         traceback.print_exc()

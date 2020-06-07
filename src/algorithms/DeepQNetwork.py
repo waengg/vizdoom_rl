@@ -67,7 +67,7 @@ class DeepQNetwork:
         #From a batch sampled from transition memory, train the model
         if len(self.mem) < self.batch_size:
             print(f'Memory does not have enough samples to train [{len(self.mem)}/{self.batch_size}]. Skipping...')
-            return
+            return None
         batch = sample(self.mem, self.batch_size)
         states = np.array([x['state'] for x in batch])
         actions = np.array([(i, x['action']) for i, x in enumerate(batch)])
@@ -81,7 +81,7 @@ class DeepQNetwork:
         # print(mask)
         dummy_y_true = [y_true, np.ones((len(batch),))]
 
-        self.model.fit([states, mask, y_true], dummy_y_true, epochs=1, batch_size=self.batch_size, verbose=0)
+        return self.model.fit([states, mask, y_true], dummy_y_true, epochs=1, batch_size=self.batch_size, verbose=0)
 
     def _future_q(self, batch):
         batch_size = len(batch)
@@ -103,23 +103,30 @@ class DeepQNetwork:
 
     def build_model(self, training=True, dueling=False):
         in_layer = K.layers.Input(self.input_dims + (self.frames_per_state,), name='state')
-        x = K.layers.Conv2D(32, [4, 4], strides=(4, 4), activation='relu')(in_layer)
-        x = K.layers.Conv2D(64, [4, 4], strides=(2, 2), activation='relu')(x)
-        x = K.layers.Conv2D(96, [4, 4], strides=(2, 2), activation='relu')(x)
+        x = K.layers.Conv2D(16, [4, 4], strides=(4, 4))(in_layer)
+        x = K.layers.Activation('relu')(x)
+        x = K.layers.BatchNormalization()(x)
+        x = K.layers.Conv2D(32, [4, 4], strides=(2, 2))(x)
+        x = K.layers.Activation('relu')(x)
+        x = K.layers.BatchNormalization()(x)
+        x = K.layers.Conv2D(32, [4, 4], strides=(2, 2))(x)
+        x = K.layers.Activation('relu')(x)
+        x = K.layers.BatchNormalization()(x)
+        # x = K.layers.Conv2D(96, [4, 4], strides=(2, 2), activation='relu')(x)
         x = K.layers.Flatten()(x)
         # x = K.layers.Dense(256, activation='relu')(x)
         if dueling:
-            v = K.layers.Dense(64, activation='relu')(x)
+            v = K.layers.Dense(128, activation='relu')(x)
+            v = K.layers.BatchNormalization()(v)
             v = K.layers.Dense(1, activation='linear')(v)
-            a = K.layers.Dense(64, activation='relu')(x)
+            a = K.layers.Dense(128, activation='relu')(x)
+            a = K.layers.BatchNormalization()(a)
             a = K.layers.Dense(self.n_actions, activation='linear')(a)
             add = K.layers.Add()([v, a])
             q = K.layers.Subtract()([add, tf.reduce_mean(a, axis=1)])
-            # q = K.layers.Lambda(lambda t: )
-
-            # q = K.layers.Lambda(lambda t: tf.expand_dims(t[:, 0], axis=-1) + t[:, 1:] - \
-            #     tf.reduce_mean(t[:, 1:], axis=1, keepdims=True), output_shape=(self.n_actions+1,))(y)
         else:
+            x = K.layers.Dense(256, activation='relu')(x)
+            x = K.layers.BatchNormalization()(x)
             q = K.layers.Dense(self.n_actions, name='q_values')(x)
         if training:
             mask = K.layers.Input((self.n_actions,), name='mask', dtype='float32')
@@ -132,8 +139,8 @@ class DeepQNetwork:
             return K.Model(in_layer, q)
 
     def compile_model(self):
-        # lr_schedule = K.optimizers.schedules.ExponentialDecay(1e-2, 100000, 0.99)
-        optimizer = K.optimizers.RMSprop(learning_rate=1e-3)
+        lr_schedule = K.optimizers.schedules.ExponentialDecay(1e-1, 100000, 0.99)
+        optimizer = K.optimizers.RMSprop(learning_rate=lr_schedule)
         # optimizer = K.optimizers.Adam()
         losses = [
             lambda y_true, y_pred: K.backend.zeros_like(y_pred),
