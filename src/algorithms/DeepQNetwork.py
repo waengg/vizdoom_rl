@@ -12,7 +12,7 @@ import numpy as np
 class DeepQNetwork:
 
     def __init__(self, dims, n_actions, frames_per_state=4, start_eps=1.0, end_eps=0.1,
-                anneal_eps=True, anneal_until=120000, memsize=100000, gamma=0.9, training=False, dueling=False, batch_size=32):
+                anneal_eps=True, anneal_until=120000, memsize=100000, gamma=0.99, training=False, dueling=False, batch_size=32):
 
 
         self.TAG            = DeepQNetwork.__name__
@@ -54,6 +54,12 @@ class DeepQNetwork:
         return np.reshape(out, out.shape + (1,))
 
     def next_eps(self, frame_num):
+        """
+            Computers the next epsilon based on a linear decay
+
+            frame_num: current frame number
+            eps: epsilon to use on the current action step
+        """
         if frame_num > self.anneal_until:
             eps = self.end_eps
         else:
@@ -98,6 +104,8 @@ class DeepQNetwork:
                             else: y_j = reward + \gamma * q(s, a, w)
         """
         argmax = np.argmax(q, axis=1)
+        # discounted_reward = np.zeros(len(batch), self.n_actions)
+
         bellman = [self.gamma * q[i][argmax[i]] if not batch[i]['terminal'] else 0. for i in range(len(q))]
         return [mem_entry['reward'] + bellman[i] for i, mem_entry in enumerate(batch)]
 
@@ -132,8 +140,8 @@ class DeepQNetwork:
             mask = K.layers.Input((self.n_actions,), name='mask', dtype='float32')
             y_true = K.layers.Input((1,), name="y_true", dtype='float32')
             loss = K.layers.Subtract()([y_true, q])
+            loss = K.layers.Lambda(lambda t: K.backend.square(t), name='loss')(loss)
             masked_loss = K.layers.Multiply()([loss, mask])
-            masked_loss = K.layers.Lambda(lambda t: K.backend.square(t), name='loss')(masked_loss)
             return K.Model([in_layer, mask, y_true], [q, masked_loss])
         else:
             return K.Model(in_layer, q)

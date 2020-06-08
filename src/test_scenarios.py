@@ -77,14 +77,13 @@ if __name__ == "__main__":
     game.set_render_messages(False)  # In-game messages
     game.set_render_corpses(False)
     game.set_render_screen_flashes(True)  # Effect upon taking damage or picking up items
-
+    game.set_doom_skill(1)
     # Adds buttons that will be allowed.
     game.add_available_button(vzd.Button.MOVE_LEFT)
     game.add_available_button(vzd.Button.MOVE_RIGHT)
     game.add_available_button(vzd.Button.MOVE_FORWARD)
     game.add_available_button(vzd.Button.TURN_LEFT)
     game.add_available_button(vzd.Button.TURN_RIGHT)
-    game.add_available_button(vzd.Button.USE)
 
     # Adds game variables that will be included in state.
     game.add_available_game_variable(vzd.GameVariable.AMMO2)
@@ -119,13 +118,13 @@ if __name__ == "__main__":
     # Run this many episodes
     episodes = 1000
     resolution = (320, 240)
-    dims = (resolution[1]//4, resolution[0]//4)
+    dims = (resolution[1]//3, resolution[0]//3)
     frames_per_state = 4
 
-    dql = DeepQNetwork(dims, n_actions, training=False)
-    dql.load_weights('../weights/dqn_only_simple_googlenet2')
+    dql = DeepQNetwork(dims, n_actions, training=False, dueling=True)
+    # dql.load_weights('../weights/dqn_simple_dueling')
     state_buffer = deque(maxlen=4)
-    # sleep_time = 1.0 / vzd.DEFAULT_TICRATE  # = 0.028
+    sleep_time = 1.0 / vzd.DEFAULT_TICRATE  # = 0.028
 
     for i in range(episodes):
         while not game.is_episode_finished():
@@ -140,25 +139,25 @@ if __name__ == "__main__":
                 [state_buffer.append(processed_frame) for _ in range(frames_per_state)]
             else:
                 state_buffer.append(processed_frame)
-            # for f in state_buffer:
-            #     print('shape:', f.shape)
+            # fig = plt.figure()
+            # for im_index, f in enumerate(state_buffer):
+            #     fig.add_subplot(1, 4, im_index+1)
             #     plt.imshow(np.squeeze(f), cmap='gray')
-            #     plt.show()
-            #     sleep(0.3)
+            # plt.show()
             state_array = np.array(state_buffer)
             state_array = np.squeeze(np.rollaxis(state_array, 0, 3))
             print(state_array.shape)
             q_vals = dql.get_actions(state_array)
             print(q_vals)
-            eps = 0.01
+            eps = 1
             if random() < eps:
                 a = choice(actions)
             else:
                 best_action = np.argmax(q_vals)
                 a = build_action(n_actions, best_action)
             r = game.make_action(a, 4)
-            # if sleep_time > 0:
-            #     sleep(sleep_time)
+            if sleep_time > 0:
+                sleep(sleep_time)
         state_buffer.clear()
         game.new_episode()
 

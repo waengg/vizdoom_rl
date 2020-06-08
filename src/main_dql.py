@@ -132,12 +132,11 @@ def setup_game(game, wad):
 
     game.load_config(f"../scenarios/configs/{wad['cfg']}")
     game.set_doom_scenario_path(f"../scenarios/{wad['name']}")
-
-    # Sets map to start (scenario .wad files can contain many maps).
     game.set_doom_map(wad['map'])
-
-    # Initialize the game. Further configuration won't take any effect from now on.
     game.init()
+
+def create_parser():
+    pass
 
 if __name__ == "__main__":
     train_name = 'simple_corridor_ddqn'
@@ -167,6 +166,8 @@ if __name__ == "__main__":
     resolution = (320, 240)
     dims = (resolution[1]//3, resolution[0]//3)
     frames_per_state = 4
+    account_time_reward = True
+    account_dist_reward = True
     last_avg_q = -np.inf
 
     dql = DeepQNetwork(dims, n_actions, training=True, dueling=True)
@@ -191,6 +192,7 @@ if __name__ == "__main__":
             start = time.time()
             train_steps = 0
             while not game.is_episode_finished():
+                frame_number += 1
                 train_steps += 1
                 tic += 1.
                 t = datetime.datetime.now()
@@ -211,18 +213,17 @@ if __name__ == "__main__":
                     q_vals = dql.get_actions(state_array)
                     best_action = np.argmax(q_vals)
 
-                frame_number += 1
-
-                before_action = datetime.datetime.now()
                 a = build_action(n_actions, best_action)
-                tic_reward = -(tic / timeout)
                 r = game.make_action(a, 4)
-                # dist = vzd.doom_fixed_to_double(game.get_game_variable(vzd.GameVariable.USER1))
-                # dist = dist / initial_distance
-                # r -= dist
-                cumulative_reward += r + tic_reward
-                if r > 90:
-                    print(f'I guess the bot did find the end: {r}')
+                if account_time_reward:
+                    tic_reward = -(tic / timeout)
+                    r -= tic_reward
+                if account_dist_reward:
+                    dist = vzd.doom_fixed_to_double(game.get_game_variable(vzd.GameVariable.USER1))
+                    dist = dist / initial_distance
+                    r -= dist
+
+                cumulative_reward += r
                 diff = datetime.datetime.now() - before_action
 
                 isterminal = game.is_episode_finished()
@@ -245,7 +246,8 @@ if __name__ == "__main__":
             state_buffer.clear()
             game.close()
             setup_game(game, choice(available_maps))
-                # print(f'Time passed to conclude a training cycle: {str(diff)}')
+
+            # METRICS
 
             print(f'End of episode {i}. Episode reward: {cumulative_reward}. Time to finish episode: {str(diff)}')
             print(f'Collecting Average Q for weights of episode {i}...')
