@@ -71,8 +71,8 @@ class DeepQNetwork:
 
     def train(self):
         #From a batch sampled from transition memory, train the model
-        if len(self.mem) < self.batch_size:
-            print(f'Memory does not have enough samples to train [{len(self.mem)}/{self.batch_size}]. Skipping...')
+        if len(self.mem) < 1000:
+            # print(f'Memory does not have enough samples to train [{len(self.mem)}/{self.batch_size}]. Skipping...')
             return None
         batch = sample(self.mem, self.batch_size)
         states = np.array([x['state'] for x in batch])
@@ -83,8 +83,6 @@ class DeepQNetwork:
         for i, action in actions:
             mask[i][action] = 1.
         y_true = np.array(self._future_q(batch))
-        # print(y_true, y_true.shape)
-        # print(mask)
         dummy_y_true = [y_true, np.ones((len(batch),))]
 
         return self.model.fit([states, mask, y_true], dummy_y_true, epochs=1, batch_size=self.batch_size, verbose=0)
@@ -97,6 +95,9 @@ class DeepQNetwork:
             np.ones((batch_size, self.n_actions)),
             np.ones((batch_size, 1))
         ])[0]
+        # print("Q values por next states")
+        # print(q)
+        # sleep(0.5)
 
         """
             as described in Mnih et al. 2015:
@@ -107,6 +108,9 @@ class DeepQNetwork:
         # discounted_reward = np.zeros(len(batch), self.n_actions)
 
         bellman = [self.gamma * q[i][argmax[i]] if not batch[i]['terminal'] else 0. for i in range(len(q))]
+        # print("Discounted reward")
+        # print(bellman)
+        # sleep(0.5)
         return [mem_entry['reward'] + bellman[i] for i, mem_entry in enumerate(batch)]
 
     def build_model(self, training=True, dueling=False):
@@ -120,7 +124,10 @@ class DeepQNetwork:
         x = K.layers.Conv2D(32, [4, 4], strides=(2, 2))(x)
         x = K.layers.Activation('relu')(x)
         x = K.layers.BatchNormalization()(x)
-        # x = K.layers.Conv2D(96, [4, 4], strides=(2, 2), activation='relu')(x)
+        # x = K.layers.Conv2D(96, [2, 2], strides=(2, 2), activation='relu')(x)
+        # x = K.layers.Activation('relu')(x)
+        # x = K.layers.BatchNormalization()(x)
+        # x = K.layers.GlobalAveragePooling2D()(x)
         x = K.layers.Flatten()(x)
         # x = K.layers.Dense(256, activation='relu')(x)
         if dueling:
@@ -147,7 +154,11 @@ class DeepQNetwork:
             return K.Model(in_layer, q)
 
     def compile_model(self):
-        lr_schedule = K.optimizers.schedules.ExponentialDecay(1e-1, 100000, 0.99)
+        # tested with:
+        # 1e-1, 1e-2, 1-e3, 1e-4
+        # with decay:
+        # 1e-1, 1e-2, 1e-4 - 100K, 0.99, 0.5
+        lr_schedule = K.optimizers.schedules.ExponentialDecay(1e-4, 100000, 0.05)
         optimizer = K.optimizers.RMSprop(learning_rate=lr_schedule)
         # optimizer = K.optimizers.Adam()
         losses = [

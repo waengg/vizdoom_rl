@@ -29,7 +29,7 @@ from shutil import rmtree
 
 USE_GPU = True
 DEVICES = None
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 if USE_GPU:
     DEVICES = tf.config.experimental.list_physical_devices('GPU')
@@ -139,26 +139,25 @@ def create_parser():
     pass
 
 if __name__ == "__main__":
-    train_name = 'simple_corridor_ddqn'
+    train_name = 'doom_E1M1_time'
     # Create DoomGame instance. It will run the game and communicate with you.
 
     # #TODO: remove every ViZDoom configuration code and create a cfg file containing them
     available_maps = [
         # {'name': 'fork_corridor.wad', 'map': 'MAP01'},
-        {'name': 'simple_corridor.wad', 'map': 'MAP01', 'cfg': 'training.cfg'},
+        # {'name': 'simple_corridor.wad', 'map': 'MAP01', 'cfg': 'training.cfg'},
         # {'name': 'simple_corridor_distance.wad', 'map': 'MAP01', 'cfg': 'training.cfg'},
         # {'name': 'my_way_home.wad', 'map': 'MAP01', 'cfg': 'my_way_home.cfg'},
         # {'name': 'deadly_corridor.wad', 'map': 'MAP01', 'cfg': 'deadly_corridor.cfg'},
         # {'name': 'basic.wad', 'map': 'map01', 'cfg': 'basic.cfg'},
         # {'name': 't_corridor.wad', 'map': 'MAP01'},
+        {'name': 'doom1_converted.wad', 'map': 'E1M1', 'cfg': 'training_fullmap.cfg'},
     ]
     game = vzd.DoomGame()
     setup_game(game, choice(available_maps))
     n_actions = game.get_available_buttons_size()
 
     actions = build_all_actions(n_actions)
-
-    # find a way to create this array in a smarter way
 
     tf.config.experimental_run_functions_eagerly(False)
     # Run this many episodes
@@ -167,10 +166,10 @@ if __name__ == "__main__":
     dims = (resolution[1]//3, resolution[0]//3)
     frames_per_state = 4
     account_time_reward = True
-    account_dist_reward = True
+    account_dist_reward = False
     last_avg_q = -np.inf
 
-    dql = DeepQNetwork(dims, n_actions, training=True, dueling=True)
+    dql = DeepQNetwork(dims, n_actions, training=True, dueling=False)
     tb_writer = setup_tensorboard(f'../logs/{train_name}')
     state_buffer = deque(maxlen=4)
 
@@ -216,7 +215,7 @@ if __name__ == "__main__":
                 a = build_action(n_actions, best_action)
                 r = game.make_action(a, 4)
                 if account_time_reward:
-                    tic_reward = -(tic / timeout)
+                    tic_reward = tic / timeout
                     r -= tic_reward
                 if account_dist_reward:
                     dist = vzd.doom_fixed_to_double(game.get_game_variable(vzd.GameVariable.USER1))
@@ -224,7 +223,6 @@ if __name__ == "__main__":
                     r -= dist
 
                 cumulative_reward += r
-                diff = datetime.datetime.now() - before_action
 
                 isterminal = game.is_episode_finished()
                 if isterminal:
@@ -260,7 +258,7 @@ if __name__ == "__main__":
 
             else:
                 print(f'Average Q {avg_q} lower than last average Q {last_avg_q}.')
-            dql.save_weights(f'../weights/{train_name}_exponentiallr')
+            dql.save_weights(f'../weights/{train_name}')
 
 
     except Exception as e:
