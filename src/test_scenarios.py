@@ -40,10 +40,10 @@ if __name__ == "__main__":
 
     game.set_window_visible(True)
 
-    game.set_doom_scenario_path("../scenarios/simple_corridor.wad")
+    game.set_doom_scenario_path("../scenarios/doom1_converted.wad")
 
     # Sets map to start (scenario .wad files can contain many maps).
-    game.set_doom_map("MAP01")
+    game.set_doom_map("E1M1")
 
     # Sets resolution. Default is 320X240
     game.set_screen_resolution(vzd.ScreenResolution.RES_320X240)
@@ -81,9 +81,10 @@ if __name__ == "__main__":
     # Adds buttons that will be allowed.
     game.add_available_button(vzd.Button.MOVE_LEFT)
     game.add_available_button(vzd.Button.MOVE_RIGHT)
-    game.add_available_button(vzd.Button.MOVE_FORWARD)
     game.add_available_button(vzd.Button.TURN_LEFT)
     game.add_available_button(vzd.Button.TURN_RIGHT)
+    game.add_available_button(vzd.Button.MOVE_FORWARD)
+    game.add_available_button(vzd.Button.USE)
 
     # Adds game variables that will be included in state.
     game.add_available_game_variable(vzd.GameVariable.AMMO2)
@@ -102,7 +103,6 @@ if __name__ == "__main__":
 
     # Sets the livin reward (for each move) to -1
     game.set_living_reward(-1)
-    game.get_game_variable
     # Sets ViZDoom mode (PLAYER, ASYNC_PLAYER, SPECTATOR, ASYNC_SPECTATOR, PLAYER mode is default)
     game.set_mode(vzd.Mode.PLAYER)
 
@@ -118,11 +118,12 @@ if __name__ == "__main__":
     # Run this many episodes
     episodes = 1000
     resolution = (320, 240)
-    dims = (resolution[1]//3, resolution[0]//3)
+    dims = (resolution[1]//4, resolution[0]//4)
     frames_per_state = 4
 
     dql = DeepQNetwork(dims, n_actions, training=False, dueling=True)
-    # dql.load_weights('../weights/dqn_simple_dueling')
+    dql.load_weights('../weights/doubleddqn_doom_E1M1_time_5e-5')
+    dql.model.summary()
     state_buffer = deque(maxlen=4)
     sleep_time = 1.0 / vzd.DEFAULT_TICRATE  # = 0.028
 
@@ -146,16 +147,17 @@ if __name__ == "__main__":
             # plt.show()
             state_array = np.array(state_buffer)
             state_array = np.squeeze(np.rollaxis(state_array, 0, 3))
-            print(state_array.shape)
-            q_vals = dql.get_actions(state_array)
-            print(q_vals)
-            eps = 1
+            eps = 0.01
             if random() < eps:
                 a = choice(actions)
             else:
+                q_vals = dql.get_actions(state_array)
+                print(q_vals)
                 best_action = np.argmax(q_vals)
                 a = build_action(n_actions, best_action)
             r = game.make_action(a, 4)
+            print(dql.model.outputs)
+            print(r)
             if sleep_time > 0:
                 sleep(sleep_time)
         state_buffer.clear()
