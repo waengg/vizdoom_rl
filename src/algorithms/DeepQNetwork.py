@@ -35,86 +35,6 @@ class DeepQNetwork:
         if self.training:
             self.compile_model()
 
-    def add_transition(self, state):
-        self.mem.append(state)
-
-    def load_weights(self, path):
-        self.model.load_weights(path)
-
-    def preprocess(self, frame):
-        """
-            frame: a grayscale frame from ViZDoom
-            out: frame resized to self.input_dims
-        """
-        array = np.array(frame)
-        # assumes that the current config uses screen format GRAY8
-        resized = cv2.resize(array.copy(), self.input_dims[::-1])
-        out = resized / 255.
-        # out = array.astype('float32')
-        return np.reshape(out, out.shape + (1,))
-
-    def next_eps(self, frame_num):
-        """
-            Computers the next epsilon based on a linear decay
-
-            frame_num: current frame number
-            eps: epsilon to use on the current action step
-        """
-        if frame_num > self.anneal_until:
-            eps = self.end_eps
-        else:
-            eps = self.start_eps - ((self.start_eps - self.end_eps) / \
-                self.anneal_until * frame_num)
-        if frame_num % 1000 == 0:
-            print(f'Using eps {eps} for frame {frame_num}.')
-        return eps
-
-    def train(self, second_model=None):
-        #From a batch sampled from transition memory, train the model
-        if len(self.mem) < self.batch_size * 3:
-            # print(f'Memory does not have enough samples to train [{len(self.mem)}/{self.batch_size}]. Skipping...')
-            return None
-        batch = sample(self.mem, self.batch_size)
-        states = np.array([x['state'] for x in batch])
-        actions = np.array([(i, x['action']) for i, x in enumerate(batch)])
-
-        t = datetime.datetime.now()
-        mask = np.zeros((len(batch), self.n_actions))
-        for i, action in actions:
-            mask[i][action] = 1.
-        y_true = np.array(self._future_q(batch, second_model))
-        dummy_y_true = [y_true, np.ones((len(batch),))]
-
-        return self.model.fit([states, mask, y_true], dummy_y_true, epochs=1, batch_size=self.batch_size, verbose=0)
-
-    def _future_q(self, batch, second_model=None):
-        batch_size = len(batch)
-        states = np.array([x['next_state'] for x in batch])
-        if second_model:
-            
-            q = second_model.model.predict([
-                states,
-                np.ones((batch_size, self.n_actions)),
-                np.ones((batch_size, 1))
-            ])[0]
-        else:
-            q = self.model.predict([
-                states,
-                np.ones((batch_size, self.n_actions)),
-                np.ones((batch_size, 1))
-            ])[0]
-
-        """
-            as described in Mnih et al. 2015:
-            If state is terminal: y_j = reward
-                            else: y_j = reward + \gamma * q(s, a, w)
-        """
-        argmax = np.argmax(q, axis=1)
-        # discounted_reward = np.zeros(len(batch), self.n_actions)
-
-        bellman = [self.gamma * q[i][argmax[i]] if not batch[i]['terminal'] else 0. for i in range(len(q))]
-        return [mem_entry['reward'] + bellman[i] for i, mem_entry in enumerate(batch)]
-
     def build_model(self, training=True, dueling=False):
         in_layer = K.layers.Input(self.input_dims + (self.frames_per_state,), name='state')
         x = K.layers.Conv2D(16, [4, 4], strides=(4, 4))(in_layer)
@@ -122,17 +42,10 @@ class DeepQNetwork:
         # x = K.layers.BatchNormalization()(x)
         x = K.layers.Conv2D(32, [4, 4], strides=(2, 2))(x)
         x = K.layers.Activation('relu')(x)
-<<<<<<< HEAD
-        x = K.layers.BatchNormalization()(x)
-#        x = K.layers.Conv2D(32, [4, 4], strides=(2, 2))(x)
-#        x = K.layers.Activation('relu')(x)
-#        x = K.layers.BatchNormalization()(x)
-=======
         # x = K.layers.BatchNormalization()(x)
         x = K.layers.Conv2D(64, [3, 3], strides=(2, 2))(x)
         x = K.layers.Activation('relu')(x)
         # x = K.layers.BatchNormalization()(x)
->>>>>>> a55ef36d170650ea56da9c6bfb38d5e9a8e7cf83
         # x = K.layers.Conv2D(96, [2, 2], strides=(2, 2), activation='relu')(x)
         # x = K.layers.Activation('relu')(x)
         # x = K.layers.BatchNormalization()(x)
@@ -175,12 +88,6 @@ class DeepQNetwork:
         ]
         self.model.compile(optimizer=optimizer, loss=losses)
 
-    def save_weights(self, path):
-        self.model.save_weights(f'{path}.h5')
-
-    def load_weights(self, path):
-        self.model.load_weights(f'{path}.h5')
-
     def get_actions(self, state):
         if state.ndim != 4:
             state = np.expand_dims(state, axis=0)
@@ -200,3 +107,89 @@ class DeepQNetwork:
             return np.array(result).reshape((len(state), self.n_actions))
         else:
             return self.model.predict([state])[0]
+
+    def add_transition(self, state):
+        self.mem.append(state)
+
+    def preprocess(self, frame):
+        """
+            frame: a grayscale frame from ViZDoom
+            out: frame resized to self.input_dims
+        """
+        array = np.array(frame)
+        # assumes that the current config uses screen format GRAY8
+        resized = cv2.resize(array.copy(), self.input_dims[::-1])
+        out = resized / 255.
+        # out = array.astype('float32')
+        return np.expand_dims(out, axis=-1)
+
+    def next_eps(self, frame_num):
+        """
+            Computers the next epsilon based on a linear decay
+
+            frame_num: current frame number
+            eps: epsilon to use on the current action step
+        """
+        if frame_num > self.anneal_until:
+            eps = self.end_eps
+        else:
+            eps = self.start_eps - ((self.start_eps - self.end_eps) / \
+                self.anneal_until * frame_num)
+        if frame_num % 1000 == 0:
+            print(f'Using eps {eps} for frame {frame_num}.')
+        return eps
+
+    def train(self, second_model=None):
+
+        #From a batch sampled from transition memory, train the model
+
+        if len(self.mem) < self.batch_size * 3:
+            return None
+        batch = sample(self.mem, self.batch_size)
+        states = np.array([x['state'] for x in batch])
+        actions = np.array([(i, x['action']) for i, x in enumerate(batch)])
+
+        t = datetime.datetime.now()
+        mask = np.zeros((len(batch), self.n_actions))
+        for i, action in actions:
+            mask[i][action] = 1.
+        y_true = np.array(self._future_q(batch, second_model))
+        dummy_y_true = [y_true, np.ones((len(batch),))]
+
+        return self.model.fit([states, mask, y_true], dummy_y_true, epochs=1, batch_size=self.batch_size, verbose=0)
+
+    def _future_q(self, batch, second_model=None):
+        batch_size = len(batch)
+        states = np.array([x['next_state'] for x in batch])
+            
+        q = self.model.predict([
+            states,
+            np.ones((batch_size, self.n_actions)),
+            np.ones((batch_size, 1))
+        ])[0]
+        if second_model:
+            q_hat = second_model.model.predict([
+                states,
+                np.ones((batch_size, self.n_actions)),
+                np.ones((batch_size, 1))
+            ])[0]
+
+            argmax = np.argmax(q_hat, axis=1)
+        else:
+            
+            argmax = np.argmax(q, axis=1)
+        """
+            as described in Mnih et al. 2015:
+            If state is terminal: y_j = reward
+                            else: y_j = reward + \gamma * q(s, a, w)
+        """
+
+        bellman = [self.gamma * q[i][argmax[i]] if not batch[i]['terminal'] else 0. for i in range(len(q))]
+        return [mem_entry['reward'] + bellman[i] for i, mem_entry in enumerate(batch)]
+
+
+    def save_weights(self, path):
+        self.model.save_weights(f'{path}.h5')
+
+    def load_weights(self, path):
+        self.model.load_weights(f'{path}.h5')
