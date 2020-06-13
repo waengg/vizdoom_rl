@@ -153,8 +153,8 @@ if __name__ == "__main__":
             else:
                 q_vals = dql.get_actions(state_array)
                 print(q_vals)
-                best_action = np.argmax(q_vals)
-                a = build_action(n_actions, best_action)
+                best_action = np.argmax(q_vals, axis=1)
+            a = build_action(n_actions, best_action)
             r = game.make_action(a, 4)
             print(dql.model.outputs)
             print(r)

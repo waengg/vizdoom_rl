@@ -103,7 +103,7 @@ def dry_run(game, n_states, actions, available_maps):
         state_buffer_array = np.rollaxis(np.expand_dims(state_buffer_array, axis=-1), 0, 3)
         visited_states.append(np.squeeze(state_buffer_array))
         #TODO: plot visited stated, just to ensure that they actually make sense
-        game.make_action(choice(actions))
+        game.make_action(choice(actions), 4)
         if game.is_episode_finished():
             state_buffer.clear()
             game.close()
@@ -183,7 +183,7 @@ if __name__ == "__main__":
         t = datetime.datetime.now()
         for i in range(episodes):
             game.new_episode()
-            timeout = game.get_episode_timeout()
+            timeout = game.get_episode_timeout() // 4
             tic = 0
             cumulative_reward = 0.
             loss = 0.
@@ -210,7 +210,7 @@ if __name__ == "__main__":
                     state_array = np.array(state_buffer)
                     state_array = np.expand_dims(np.squeeze(np.rollaxis(state_array, 0, 3)), axis=0)
                     q_vals = dql.get_actions(state_array)
-                    best_action = np.argmax(q_vals)
+                    best_action = np.argmax(q_vals, axis=1)
 
                 a = build_action(n_actions, best_action)
                 r = game.make_action(a, 4)
@@ -221,11 +221,12 @@ if __name__ == "__main__":
                     dist = vzd.doom_fixed_to_double(game.get_game_variable(vzd.GameVariable.USER1))
                     dist = dist / initial_distance
                     r -= dist
-
+                if r > 1.:
+                    print("Agent found some positive reward:", r)
                 cumulative_reward += r
-
                 isterminal = game.is_episode_finished()
                 if isterminal:
+                    print("Terminal state. Current tic:", tic)
                     new_state_buffer = state_buffer.copy()
                 else:
                     new_state = game.get_state()
@@ -247,7 +248,7 @@ if __name__ == "__main__":
 
             # METRICS
 
-            print(f'End of episode {i}. Episode reward: {cumulative_reward}. Time to finish episode: {str(diff)}')
+            print(f'End of episode {i}. Episode reward: {cumulative_reward}. Episode loss: {episode_loss}. Time to finish episode: {str(diff)}')
             print(f'Collecting Average Q for weights of episode {i}...')
             avg_q = eval_average_q(eval_states, dql)
             print(f'Episode {i}: Average Q: {avg_q}')

@@ -12,7 +12,7 @@ import numpy as np
 class DeepQNetwork:
 
     def __init__(self, dims, n_actions, frames_per_state=4, start_eps=1.0, end_eps=0.1,
-                anneal_eps=True, anneal_until=120000, memsize=100000, gamma=0.99, training=False, dueling=False, batch_size=32):
+                anneal_eps=True, anneal_until=50000, memsize=100000, gamma=0.99, training=False, dueling=False, batch_size=32):
 
 
         self.TAG            = DeepQNetwork.__name__
@@ -69,9 +69,9 @@ class DeepQNetwork:
             print(f'Using eps {eps} for frame {frame_num}.')
         return eps
 
-    def train(self):
+    def train(self, second_model=None):
         #From a batch sampled from transition memory, train the model
-        if len(self.mem) < 1000:
+        if len(self.mem) < self.batch_size * 3:
             # print(f'Memory does not have enough samples to train [{len(self.mem)}/{self.batch_size}]. Skipping...')
             return None
         batch = sample(self.mem, self.batch_size)
@@ -82,22 +82,27 @@ class DeepQNetwork:
         mask = np.zeros((len(batch), self.n_actions))
         for i, action in actions:
             mask[i][action] = 1.
-        y_true = np.array(self._future_q(batch))
+        y_true = np.array(self._future_q(batch, second_model))
         dummy_y_true = [y_true, np.ones((len(batch),))]
 
         return self.model.fit([states, mask, y_true], dummy_y_true, epochs=1, batch_size=self.batch_size, verbose=0)
 
-    def _future_q(self, batch):
+    def _future_q(self, batch, second_model=None):
         batch_size = len(batch)
         states = np.array([x['next_state'] for x in batch])
-        q = self.model.predict([
-            states,
-            np.ones((batch_size, self.n_actions)),
-            np.ones((batch_size, 1))
-        ])[0]
-        # print("Q values por next states")
-        # print(q)
-        # sleep(0.5)
+        if second_model:
+            
+            q = second_model.model.predict([
+                states,
+                np.ones((batch_size, self.n_actions)),
+                np.ones((batch_size, 1))
+            ])[0]
+        else:
+            q = self.model.predict([
+                states,
+                np.ones((batch_size, self.n_actions)),
+                np.ones((batch_size, 1))
+            ])[0]
 
         """
             as described in Mnih et al. 2015:
@@ -108,26 +113,30 @@ class DeepQNetwork:
         # discounted_reward = np.zeros(len(batch), self.n_actions)
 
         bellman = [self.gamma * q[i][argmax[i]] if not batch[i]['terminal'] else 0. for i in range(len(q))]
-        # print("Discounted reward")
-        # print(bellman)
-        # sleep(0.5)
         return [mem_entry['reward'] + bellman[i] for i, mem_entry in enumerate(batch)]
 
     def build_model(self, training=True, dueling=False):
         in_layer = K.layers.Input(self.input_dims + (self.frames_per_state,), name='state')
         x = K.layers.Conv2D(16, [4, 4], strides=(4, 4))(in_layer)
         x = K.layers.Activation('relu')(x)
-        x = K.layers.BatchNormalization()(x)
+        # x = K.layers.BatchNormalization()(x)
         x = K.layers.Conv2D(32, [4, 4], strides=(2, 2))(x)
         x = K.layers.Activation('relu')(x)
+<<<<<<< HEAD
         x = K.layers.BatchNormalization()(x)
 #        x = K.layers.Conv2D(32, [4, 4], strides=(2, 2))(x)
 #        x = K.layers.Activation('relu')(x)
 #        x = K.layers.BatchNormalization()(x)
+=======
+        # x = K.layers.BatchNormalization()(x)
+        x = K.layers.Conv2D(64, [3, 3], strides=(2, 2))(x)
+        x = K.layers.Activation('relu')(x)
+        # x = K.layers.BatchNormalization()(x)
+>>>>>>> a55ef36d170650ea56da9c6bfb38d5e9a8e7cf83
         # x = K.layers.Conv2D(96, [2, 2], strides=(2, 2), activation='relu')(x)
         # x = K.layers.Activation('relu')(x)
         # x = K.layers.BatchNormalization()(x)
-        # x = K.layers.GlobalAveragePooling2D()(x)
+        x = K.layers.GlobalAveragePooling2D()(x)
         x = K.layers.Flatten()(x)
         # x = K.layers.Dense(256, activation='relu')(x)
         if dueling:
@@ -158,9 +167,8 @@ class DeepQNetwork:
         # 1e-1, 1e-2, 1-e3, 1e-4
         # with decay:
         # 1e-1, 1e-2, 1e-4 - 100K, 0.99, 0.5
-        lr_schedule = K.optimizers.schedules.ExponentialDecay(1e-4, 100000, 0.05)
-        optimizer = K.optimizers.RMSprop(learning_rate=lr_schedule)
-        # optimizer = K.optimizers.Adam()
+        #lr_schedule = K.optimizers.schedules.ExponentialDecay(1e-5, 100000, 0.02)
+        optimizer = K.optimizers.RMSprop(learning_rate=1e-4)
         losses = [
             lambda y_true, y_pred: K.backend.zeros_like(y_pred),
             lambda y_true, y_pred: tf.squeeze(y_pred),
