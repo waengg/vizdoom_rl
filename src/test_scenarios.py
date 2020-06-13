@@ -153,7 +153,7 @@ if __name__ == "__main__":
             if random() < eps:
                 a = choice(actions)
             else:
-                best_action = np.argmax(q_vals)
+                best_action = np.argmax(q_vals, axis=1)
                 a = build_action(n_actions, best_action)
             r = game.make_action(a, 4)
             if sleep_time > 0:
