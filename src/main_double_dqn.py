@@ -128,7 +128,7 @@ def create_parser():
     pass
 
 if __name__ == "__main__":
-    train_name = 'doubledqn_e1m1_1e-4_time'
+    train_name = 'simple_ddqn_big'
     # Create DoomGame instance. It will run the game and communicate with you.
 
     # #TODO: remove every ViZDoom configuration code and create a cfg file containing them
@@ -168,7 +168,7 @@ if __name__ == "__main__":
     #TODO: check each and every line of this code. something MUST be off, it's impossible dude
 
     try:
-        eval_states = dry_run(game, 10000, actions, available_maps)
+        eval_states = dry_run(game, 2500, actions, available_maps)
         setup_game(game, choice(available_maps))
         frame_number = 0
         t = datetime.datetime.now()

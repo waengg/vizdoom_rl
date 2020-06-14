@@ -40,16 +40,16 @@ class DeepQNetwork:
         x = K.layers.Conv2D(16, [4, 4], strides=(4, 4))(in_layer)
         x = K.layers.Activation('relu')(x)
         # x = K.layers.BatchNormalization()(x)
-        x = K.layers.Conv2D(32, [4, 4], strides=(2, 2))(x)
+        x = K.layers.Conv2D(32, [3, 3], strides=(2, 2))(x)
         x = K.layers.Activation('relu')(x)
         # x = K.layers.BatchNormalization()(x)
         x = K.layers.Conv2D(64, [3, 3], strides=(2, 2))(x)
         x = K.layers.Activation('relu')(x)
         # x = K.layers.BatchNormalization()(x)
-        # x = K.layers.Conv2D(96, [2, 2], strides=(2, 2), activation='relu')(x)
-        # x = K.layers.Activation('relu')(x)
+        x = K.layers.Conv2D(96, [2, 2], strides=(2, 2), activation='relu')(x)
+        x = K.layers.Activation('relu')(x)
         # x = K.layers.BatchNormalization()(x)
-        x = K.layers.GlobalAveragePooling2D()(x)
+        # x = K.layers.GlobalAveragePooling2D()(x)
         x = K.layers.Flatten()(x)
         # x = K.layers.Dense(256, activation='relu')(x)
         if dueling:
@@ -119,7 +119,7 @@ class DeepQNetwork:
         array = np.array(frame)
         # assumes that the current config uses screen format GRAY8
         resized = cv2.resize(array.copy(), self.input_dims[::-1])
-        out = resized / 255.
+        out = resized
         # out = array.astype('float32')
         return np.expand_dims(out, axis=-1)
 
