@@ -2,10 +2,10 @@ class PrioritizedReplay:
     def __init__(self, maxlen=1000):
         pass
     
-    def enqueue(state, priority):
+    def enqueue(self, state, priority):
         pass
 
-    def pop():
+    def pop(self):
         pass
 
     pass

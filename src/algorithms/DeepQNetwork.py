@@ -67,11 +67,13 @@ class DeepQNetwork:
             q = K.layers.Dense(self.n_actions, name='q_values')(x)
         if training:
             mask = K.layers.Input((self.n_actions,), name='mask', dtype='float32')
-            y_true = K.layers.Input((1,), name="y_true", dtype='float32')
-            loss = K.layers.Subtract()([y_true, q])
-            loss = K.layers.Lambda(lambda t: K.backend.square(t), name='loss')(loss)
-            masked_loss = K.layers.Multiply()([loss, mask])
-            return K.Model([in_layer, mask, y_true], [q, masked_loss])
+            # y_true = K.layers.Input((1,), name="y_true", dtype='float32')
+            # loss = K.layers.Subtract()([y_true, q])
+            # loss = K.layers.Lambda(lambda t: K.backend.square(t), name='loss')(loss)
+            # masked_loss = K.layers.Multiply()([loss, mask])
+            masked_output = K.layers.Multiply()([q, mask])
+            # return K.Model([in_layer, mask, y_true], [q, masked_loss])
+            return K.Model([in_layer, mask], [masked_output])
         else:
             return K.Model(in_layer, q)
 
@@ -81,12 +83,14 @@ class DeepQNetwork:
         # with decay:
         # 1e-1, 1e-2, 1e-4 - 100K, 0.99, 0.5
         #lr_schedule = K.optimizers.schedules.ExponentialDecay(1e-5, 100000, 0.02)
-        optimizer = K.optimizers.RMSprop(learning_rate=1e-4)
-        losses = [
-            lambda y_true, y_pred: K.backend.zeros_like(y_pred),
-            lambda y_true, y_pred: tf.squeeze(y_pred),
-        ]
-        self.model.compile(optimizer=optimizer, loss=losses)
+        optimizer = K.optimizers.RMSprop(learning_rate=1e-5)
+        # losses = [
+        #     lambda y_true, y_pred: K.backend.zeros_like(y_pred),
+        #     lambda y_true, y_pred: K.backend.zeros_like(y_pred),
+        #     # lambda y_true, y_pred: tf.squeeze(y_pred),
+        # ]
+        # self.model.compile(optimizer=optimizer, loss=losses)
+        self.model.compile(optimizer=optimizer, loss='mse')
 
     def get_actions(self, state):
         if state.ndim != 4:
@@ -98,15 +102,19 @@ class DeepQNetwork:
             # add each batch processed into a unique array for later analysis
             result = []
             for batch in split_batches:
+                # model_out = self.model.predict([
+                #     batch,
+                #     np.zeros((len(batch), self.n_actions)),
+                #     np.zeros((len(batch), 1)),
+                # ])
                 model_out = self.model.predict([
                     batch,
-                    np.zeros((len(batch), self.n_actions)),
-                    np.zeros((len(batch), 1)),
+                    np.ones((len(batch), self.n_actions))
                 ])
-                result.extend(model_out[0])
-            return np.array(result).reshape((len(state), self.n_actions))
+                result.extend(model_out)
+            return np.array(result)
         else:
-            return self.model.predict([state])[0]
+            return self.model.predict([state])
 
     def add_transition(self, state):
         self.mem.append(state)
@@ -119,7 +127,8 @@ class DeepQNetwork:
         array = np.array(frame)
         # assumes that the current config uses screen format GRAY8
         resized = cv2.resize(array.copy(), self.input_dims[::-1])
-        out = resized / 255.
+        # out = resized / 255.
+        out = resized
         # out = array.astype('float32')
         return np.expand_dims(out, axis=-1)
 
@@ -151,28 +160,41 @@ class DeepQNetwork:
 
         t = datetime.datetime.now()
         mask = np.zeros((len(batch), self.n_actions))
+        y_true = np.zeros((len(batch), self.n_actions))
+        discounted_reward = np.array(self._future_q(batch, second_model))
+        # print("discounted reward:", discounted_reward)
         for i, action in actions:
             mask[i][action] = 1.
-        y_true = np.array(self._future_q(batch, second_model))
-        dummy_y_true = [y_true, np.ones((len(batch),))]
+            y_true[i][action] = discounted_reward[i]
+        # y_true = np.array(self._future_q(batch, second_model))
+        # dummy_y_true = [y_true, np.ones((len(batch),))]
 
-        return self.model.fit([states, mask, y_true], dummy_y_true, epochs=1, batch_size=self.batch_size, verbose=0)
+        # return self.model.fit([states, mask, y_true], dummy_y_true, epochs=1, batch_size=self.batch_size, verbose=0)
+        return self.model.fit([states, mask], y_true, epochs=1, batch_size=self.batch_size, verbose=0)
 
     def _future_q(self, batch, second_model=None):
         batch_size = len(batch)
         states = np.array([x['next_state'] for x in batch])
             
+        # q = self.model.predict([
+        #     states,
+        #     np.ones((batch_size, self.n_actions)),
+        #     np.ones((batch_size, 1))
+        # ])[0]
         q = self.model.predict([
             states,
-            np.ones((batch_size, self.n_actions)),
-            np.ones((batch_size, 1))
-        ])[0]
+            np.ones((batch_size, self.n_actions))
+        ])
         if second_model:
+            # q_hat = second_model.model.predict([
+            #     states,
+            #     np.ones((batch_size, self.n_actions)),
+            #     np.ones((batch_size, 1))
+            # ])[0]
             q_hat = second_model.model.predict([
                 states,
-                np.ones((batch_size, self.n_actions)),
-                np.ones((batch_size, 1))
-            ])[0]
+                np.ones((batch_size, self.n_actions))
+            ])
 
             argmax = np.argmax(q_hat, axis=1)
         else:
@@ -181,10 +203,14 @@ class DeepQNetwork:
         """
             as described in Mnih et al. 2015:
             If state is terminal: y_j = reward
-                            else: y_j = reward + \gamma * q(s, a, w)
+                            else: y_j = reward + \gamma * q(s_t+1, a, w) (DQN)
+                            or    y_j = reward + \gamma * q(s_t+1, argmax_a q'(s_t+1, a, w'), w) (Double DQN)
         """
 
         bellman = [self.gamma * q[i][argmax[i]] if not batch[i]['terminal'] else 0. for i in range(len(q))]
+        # print('rewards:')
+        # for mem_entry in batch:
+        #     print(mem_entry['reward'])
         return [mem_entry['reward'] + bellman[i] for i, mem_entry in enumerate(batch)]
 
 
