@@ -59,12 +59,11 @@ def write_tensorboard_data(writer, episode, avg_q, episode_reward, episode_loss)
         tf.summary.scalar('Average Episode Loss', episode_loss, step=episode)
     writer.flush()
 
+# both state acquisitions seem to be working as intended
 def build_memory_state(state, action, reward, new_state, is_terminal):
     state_array = np.array(state)
-    # state_array = state_array.reshape(sa_shape[1:3] + (4,))
     state_array = np.squeeze(np.rollaxis(state_array, 0, 3))
     new_state_array = np.array(new_state)
-    # new_state_array = new_state_array.reshape(nsa_shape[1:3] + (4,))
     new_state_array = np.squeeze(np.rollaxis(new_state_array, 0, 3))
     return {
         'state': state_array,
@@ -74,6 +73,7 @@ def build_memory_state(state, action, reward, new_state, is_terminal):
         'terminal': is_terminal
     }
 
+# method seems to be handling state acquisition well
 def dry_run(game, n_states, actions, available_maps):
     visited_states = []
     state_buffer = deque(maxlen=4)
@@ -89,10 +89,14 @@ def dry_run(game, n_states, actions, available_maps):
             state_buffer.append(processed_frame)
         state_buffer_array = np.array(state_buffer)
 
-        state_buffer_array = np.rollaxis(np.expand_dims(state_buffer_array, axis=-1), 0, 3)
+        state_buffer_array = np.squeeze(np.rollaxis(state_buffer_array, 0, 3))
+        # fig = plt.figure()
+        # for im_index in range(4):
+        #     fig.add_subplot(1, 4, im_index+1)
+        #     plt.imshow(np.squeeze(state_buffer_array[:,:, im_index]), cmap='gray')
+        # plt.show()
         visited_states.append(np.squeeze(state_buffer_array))
-        #TODO: plot visited stated, just to ensure that they actually make sense
-        game.make_action(choice(actions), 4)
+        game.make_action(choice(actions), 7)
         if game.is_episode_finished():
             state_buffer.clear()
             game.close()
@@ -103,8 +107,9 @@ def dry_run(game, n_states, actions, available_maps):
 def eval_average_q(states, network):
     q_vals = network.get_actions(states)
     print(q_vals[200:230])
-    argmax = np.argmax(q_vals, axis=1)
-    max_values = np.array([q_vals[i][argmax[i]] for i in range(len(argmax))])
+    # argmax = np.argmax(q_vals, axis=1)
+    # max_values = np.array([q_vals[i][argmax[i]] for i in range(len(argmax))])
+    max_values = np.max(q_vals, axis=1)
     return np.mean(max_values)
 
 def limit_gpu_usage():
@@ -138,10 +143,10 @@ if __name__ == "__main__":
         # {'name': 'simple_corridor_distance.wad', 'map': 'MAP01', 'cfg': 'training.cfg'},
         # {'name': 'my_way_home.wad', 'map': 'MAP01', 'cfg': 'my_way_home.cfg'},
         # {'name': 'deadly_corridor.wad', 'map': 'MAP01', 'cfg': 'deadly_corridor.cfg'},
-        {'name': 'basic.wad', 'map': 'map01', 'cfg': 'basic.cfg'},
+        # {'name': 'basic.wad', 'map': 'map01', 'cfg': 'basic.cfg'},
         # {'name': 't_corridor.wad', 'map': 'MAP01'},
         # {'name': 'doom1_converted.wad', 'map': 'E1M1', 'cfg': 'training_fullmap.cfg'},
-        # {'name': 'doom1_e1m1_door1.wad', 'map': 'E1M1', 'cfg': 'training_fullmap.cfg'},
+        {'name': 'doom1_e1m1_door1.wad', 'map': 'E1M1', 'cfg': 'training_fullmap.cfg'},
     ]
     game = vzd.DoomGame()
     setup_game(game, choice(available_maps))
@@ -152,6 +157,7 @@ if __name__ == "__main__":
     tf.config.experimental_run_functions_eagerly(False)
     # Run this many episodes
     episodes = 10000
+    update_steps = 1000
     resolution = (320, 240)
     dims = (resolution[1]//4, resolution[0]//4)
     frames_per_state = 4
@@ -168,14 +174,15 @@ if __name__ == "__main__":
     #TODO: check each and every line of this code. something MUST be off, it's impossible dude
 
     try:
-        eval_states = dry_run(game, 2500, actions, available_maps)
+        eval_states = dry_run(game, 10000, actions, available_maps)
         setup_game(game, choice(available_maps))
         frame_number = 0
         t = datetime.datetime.now()
         for i in range(episodes):
+            curr_step = 0
             game.new_episode()
             update_weights = False
-            timeout = game.get_episode_timeout() // 4
+            timeout = game.get_episode_timeout() // frames_per_state
             tic = 0
             cumulative_reward = 0.
             loss = 0.
@@ -184,6 +191,9 @@ if __name__ == "__main__":
             train_steps = 0
             while not game.is_episode_finished():
                 frame_number += 1
+                if frame_number % 2000 == 0:
+                    print(f'Frame {frame_number}: Updating model weights.')
+                    dql.model.set_weights(dql_target.model.get_weights())
                 train_steps += 1
                 tic += 1.
                 t = datetime.datetime.now()
@@ -202,10 +212,10 @@ if __name__ == "__main__":
                     state_array = np.array(state_buffer)
                     state_array = np.expand_dims(np.squeeze(np.rollaxis(state_array, 0, 3)), axis=0)
                     q_vals = dql_target.get_actions(state_array)
-                    best_action = np.argmax(q_vals, axis=1)
+                    best_action = np.argmax(q_vals, axis=1)[0]
 
                 a = build_action(n_actions, best_action)
-                r = game.make_action(a, 4)
+                r = game.make_action(a, 7)
                 if account_time_reward:
                     tic_reward = tic / timeout
                     r -= tic_reward
@@ -213,8 +223,11 @@ if __name__ == "__main__":
                     dist = vzd.doom_fixed_to_double(game.get_game_variable(vzd.GameVariable.USER1))
                     dist = dist / initial_distance
                     r -= dist
-                if r > 1.:
+                if r > -0.50:
+                    r = 1.
                     print("Agent found some positive reward:", r, ". Action performed:", a)
+                else:
+                    r = -1.
                 cumulative_reward += r
                 isterminal = game.is_episode_finished()
                 if isterminal:
@@ -237,7 +250,6 @@ if __name__ == "__main__":
             game.close()
             setup_game(game, choice(available_maps))
 
-            dql.model.set_weights(dql_target.model.get_weights())
             # METRICS
 
             print(f'End of episode {i}. Episode reward: {cumulative_reward}. Episode loss: {episode_loss}. Time to finish episode: {str(diff)}')

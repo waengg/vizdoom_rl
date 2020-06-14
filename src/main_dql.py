@@ -114,8 +114,9 @@ def dry_run(game, n_states, actions, available_maps):
 def eval_average_q(states, network):
     q_vals = network.get_actions(states)
     print(q_vals[500:520])
-    argmax = np.argmax(q_vals, axis=1)
-    max_values = np.array([q_vals[i][argmax[i]] for i in range(len(argmax))])
+    # argmax = np.argmax(q_vals, axis=1)
+    # max_values = np.array([q_vals[i][argmax[i]] for i in range(len(argmax))])
+    max_values = np.max(q_vals, axis=1)
     return np.mean(max_values)
 
 def limit_gpu_usage():
@@ -149,9 +150,9 @@ if __name__ == "__main__":
         # {'name': 'simple_corridor_distance.wad', 'map': 'MAP01', 'cfg': 'training.cfg'},
         # {'name': 'my_way_home.wad', 'map': 'MAP01', 'cfg': 'my_way_home.cfg'},
         # {'name': 'deadly_corridor.wad', 'map': 'MAP01', 'cfg': 'deadly_corridor.cfg'},
-        # {'name': 'basic.wad', 'map': 'map01', 'cfg': 'basic.cfg'},
+        {'name': 'basic.wad', 'map': 'map01', 'cfg': 'basic.cfg'},
         # {'name': 't_corridor.wad', 'map': 'MAP01'},
-        {'name': 'doom1_converted.wad', 'map': 'E1M1', 'cfg': 'training_fullmap.cfg'},
+        # {'name': 'doom1_converted.wad', 'map': 'E1M1', 'cfg': 'training_fullmap.cfg'},
     ]
     game = vzd.DoomGame()
     setup_game(game, choice(available_maps))
@@ -163,7 +164,7 @@ if __name__ == "__main__":
     # Run this many episodes
     episodes = 10000
     resolution = (320, 240)
-    dims = (resolution[1]//3, resolution[0]//3)
+    dims = (resolution[1]//4, resolution[0]//4)
     frames_per_state = 4
     account_time_reward = True
     account_dist_reward = False
@@ -177,7 +178,7 @@ if __name__ == "__main__":
     #TODO: check each and every line of this code. something MUST be off, it's impossible dude
 
     try:
-        eval_states = dry_run(game, 10000, actions, available_maps)
+        eval_states = dry_run(game, 300, actions, available_maps)
         setup_game(game, choice(available_maps))
         frame_number = 0
         t = datetime.datetime.now()
