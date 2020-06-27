@@ -123,7 +123,7 @@ if __name__ == "__main__":
     frames_per_state = 4
 
     dql = DeepQNetwork(dims, n_actions, training=False, dueling=False)
-    dql.load_weights('../weights/doubledqn_e1m1_1e-4_time')
+    dql.load_weights('../weights/simple_ddqn_big')
     dql.model.summary()
     state_buffer = deque(maxlen=4)
     sleep_time = 1.0 / vzd.DEFAULT_TICRATE  # = 0.028
@@ -150,7 +150,7 @@ if __name__ == "__main__":
             state_array = np.squeeze(np.rollaxis(state_array, 0, 3))
             eps = 0.01
             if random() < eps:
-                a = choice(actions)
+                best_action = randint(0, n_actions-1)
             else:
                 q_vals = dql.get_actions(state_array)
                 print(q_vals)

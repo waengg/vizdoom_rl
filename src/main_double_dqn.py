@@ -74,7 +74,7 @@ def build_memory_state(state, action, reward, new_state, is_terminal):
     }
 
 # method seems to be handling state acquisition well
-def dry_run(game, n_states, actions, available_maps):
+def dry_run(game, n_states, actions, available_maps, frame_skip=4):
     visited_states = []
     state_buffer = deque(maxlen=4)
     game.new_episode()
@@ -96,7 +96,7 @@ def dry_run(game, n_states, actions, available_maps):
         #     plt.imshow(np.squeeze(state_buffer_array[:,:, im_index]), cmap='gray')
         # plt.show()
         visited_states.append(np.squeeze(state_buffer_array))
-        game.make_action(choice(actions), 7)
+        game.make_action(choice(actions), frame_skip)
         if game.is_episode_finished():
             state_buffer.clear()
             game.close()
@@ -156,6 +156,7 @@ if __name__ == "__main__":
 
     tf.config.experimental_run_functions_eagerly(False)
     # Run this many episodes
+    frame_skip = 4
     episodes = 10000
     update_steps = 1000
     resolution = (320, 240)
@@ -174,7 +175,7 @@ if __name__ == "__main__":
     #TODO: check each and every line of this code. something MUST be off, it's impossible dude
 
     try:
-        eval_states = dry_run(game, 10000, actions, available_maps)
+        eval_states = dry_run(game, 10000, actions, available_maps, frame_skip=frame_skip)
         setup_game(game, choice(available_maps))
         frame_number = 0
         t = datetime.datetime.now()
@@ -191,7 +192,7 @@ if __name__ == "__main__":
             train_steps = 0
             while not game.is_episode_finished():
                 frame_number += 1
-                if frame_number % 2000 == 0:
+                if frame_number % 200 == 0:
                     print(f'Frame {frame_number}: Updating model weights.')
                     dql.model.set_weights(dql_target.model.get_weights())
                 train_steps += 1
@@ -213,9 +214,10 @@ if __name__ == "__main__":
                     state_array = np.expand_dims(np.squeeze(np.rollaxis(state_array, 0, 3)), axis=0)
                     q_vals = dql_target.get_actions(state_array)
                     best_action = np.argmax(q_vals, axis=1)[0]
+                    print(np.argmax(q_vals, axis=1))
 
                 a = build_action(n_actions, best_action)
-                r = game.make_action(a, 7)
+                r = game.make_action(a, 4)
                 if account_time_reward:
                     tic_reward = tic / timeout
                     r -= tic_reward
@@ -243,7 +245,8 @@ if __name__ == "__main__":
                 dql_target.add_transition(memory_state)
                 history = dql_target.train(dql)
                 if history is not None:
-                    loss += history.history['loss'][0]
+                    # loss += history.history['loss'][0]
+                    loss += history
             episode_loss = loss / train_steps
             diff = time.time() - start
             state_buffer.clear()
