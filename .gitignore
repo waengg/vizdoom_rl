@@ -145,3 +145,4 @@ weights/
 _vizdoom.ini
 
 # ignore tensorboard logging?
+logs/

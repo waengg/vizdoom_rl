@@ -102,7 +102,7 @@ def dry_run(game, n_states, actions, available_maps):
         #     plt.imshow(np.squeeze(state_buffer_array[:,:, im_index]), cmap='gray')
         # plt.show()
         visited_states.append(np.squeeze(state_buffer_array))
-        game.make_action(choice(actions), 4)
+        game.make_action(choice(actions), 3)
         if game.is_episode_finished():
             state_buffer.clear()
             # game.close()
@@ -132,7 +132,7 @@ def fill_memory(memory, game, dqn, actions):
             state_buffer.append(processed_frame)
         action = randint(0, actions-1)
         action_array = build_action(actions, action)
-        reward = game.make_action(action_array, 4)
+        reward = game.make_action(action_array, 3)
         if reward < -1:
             reward = -1.
         elif reward > 1.:
@@ -191,7 +191,7 @@ def minimum_distance_traveled(curr_pos, past_pos, min_difference):
         return False
 
 if __name__ == "__main__":
-    train_name = 'nature_arch_dtc'
+    train_name = 'nature_arch_dtc_3_frameskip_0.1'
     # Create DoomGame instance. It will run the game and communicate with you.
 
     # #TODO: remove every ViZDoom configuration code and create a cfg file containing them
@@ -200,7 +200,7 @@ if __name__ == "__main__":
         # {'name': 'simple_corridor.wad', 'map': 'MAP01', 'cfg': 'training.cfg'},
         # {'name': 'simple_corridor_distance.wad', 'map': 'MAP01', 'cfg': 'training.cfg'},
         # {'name': 'my_way_home.wad', 'map': 'MAP01', 'cfg': 'my_way_home.cfg'},
-        {'name': 'defend_the_center.wad', 'map': 'MAP01', 'cfg': 'defend_the_center.cfg'},
+        {'name': 'defend_the_center-0.1.wad', 'map': 'MAP01', 'cfg': 'defend_the_center.cfg'},
         # {'name': 'deadly_corridor.wad', 'map': 'MAP01', 'cfg': 'deadly_corridor.cfg'},
         # {'name': 'basic.wad', 'map': 'map01', 'cfg': 'basic.cfg'},
         # {'name': 't_corridor.wad', 'map': 'MAP01'},
@@ -302,7 +302,7 @@ if __name__ == "__main__":
                     best_action = np.argmax(q_vals, axis=1)[0]
 
                 a = build_action(n_actions, best_action)
-                r = game.make_action(a, 4)
+                r = game.make_action(a, 3)
                 isterminal = game.is_episode_finished()
 
                 if negative_reward_on_use:
